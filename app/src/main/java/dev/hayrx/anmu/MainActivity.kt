@@ -48,6 +48,9 @@ class MainActivity : Activity() {
     private val nativeEngine by lazy { NativeVmEngine() }
     private var selectedIsoUri: Uri? = null
     private var selectedIsoName: String = ""
+    private var selectedPupUri: Uri? = null
+    private var selectedPupName: String = ""
+    private var selectedPupSize: Long = 0L
     private var vmController: QemuVmController? = null
     private var vmStarting = false
     private var vmRunning = false
@@ -79,7 +82,11 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         selectedIsoUri = prefs.getString(KEY_ISO_URI, null)?.let(Uri::parse)
         selectedIsoName = prefs.getString(KEY_ISO_NAME, "") ?: ""
+        selectedPupUri = prefs.getString(KEY_PUP_URI, null)?.let(Uri::parse)
+        selectedPupName = prefs.getString(KEY_PUP_NAME, "") ?: ""
+        selectedPupSize = prefs.getLong(KEY_PUP_SIZE, 0L)
         validateSavedIso()
+        validateSavedPup()
         buildPage()
         renderContent()
     }
@@ -171,7 +178,15 @@ class MainActivity : Activity() {
         group.addView(settingsButton, LinearLayout.LayoutParams(
             dp(240), dp(54)
         ).apply { bottomMargin = dp(12) })
-        group.addView(isoButton, LinearLayout.LayoutParams(dp(240), dp(54)))
+        group.addView(isoButton, LinearLayout.LayoutParams(dp(240), dp(54)).apply { bottomMargin = dp(12) })
+        group.addView(actionButton("PS5 Firmware (.PUP)", false) { openPupPicker() },
+            LinearLayout.LayoutParams(dp(240), dp(54)))
+        group.addView(label(
+            selectedPupName.takeIf { it.isNotBlank() }?.let { "Firmware: $it · ${formatFileSize(selectedPupSize)}" }
+                ?: "PUP is stored separately; it is not a bootable ISO.",
+            11f, muted
+        ).apply { gravity = Gravity.CENTER; setPadding(dp(8), dp(10), dp(8), 0); maxLines = 3 },
+            LinearLayout.LayoutParams(dp(280), ViewGroup.LayoutParams.WRAP_CONTENT))
 
         contentFrame.addView(group, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
@@ -209,6 +224,19 @@ class MainActivity : Activity() {
         isoRow.addView(isoInfo, LinearLayout.LayoutParams(0, dp(38), 1f))
         isoRow.addView(smallButton("CHANGE") { openIsoPicker() })
         chrome.addView(isoRow)
+
+        val pupRow = LinearLayout(this).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(dp(4), 0, dp(4), dp(6))
+        }
+        val pupInfo = label(
+            selectedPupName.takeIf { it.isNotBlank() }?.let { "PS5 PUP: $it · ${formatFileSize(selectedPupSize)}" }
+                ?: "PS5 Firmware: not selected", 11f, muted
+        ).apply { maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.MIDDLE }
+        pupRow.addView(pupInfo, LinearLayout.LayoutParams(0, dp(36), 1f))
+        pupRow.addView(smallButton("PUP") { openPupPicker() })
+        chrome.addView(pupRow)
 
         val inputDock = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -562,6 +590,25 @@ class MainActivity : Activity() {
         return card
     }
 
+    private fun openPupPicker() {
+        if (vmRunning || vmStarting) {
+            Toast.makeText(this, "Stop the guest OS before changing firmware.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        }
+        try {
+            @Suppress("DEPRECATION")
+            startActivityForResult(intent, REQUEST_PUP)
+        } catch (error: Exception) {
+            Toast.makeText(this, "Could not open the file picker: ${error.localizedMessage}", Toast.LENGTH_LONG).show()
+        }
+    }
+
     private fun openIsoPicker() {
         if (vmRunning || vmStarting) {
             Toast.makeText(this, "Stop the guest OS before changing its ISO.", Toast.LENGTH_SHORT).show()
@@ -584,9 +631,32 @@ class MainActivity : Activity() {
     @Deprecated("Legacy activity result API is used to keep the app dependency-free.")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode != REQUEST_ISO || resultCode != Activity.RESULT_OK) return
+        if (resultCode != Activity.RESULT_OK) return
         val uri = data?.data ?: return
         val name = queryDisplayName(uri)
+
+        if (requestCode == REQUEST_PUP) {
+            if (name.isBlank() || !name.lowercase().endsWith(".pup")) {
+                Toast.makeText(this, "Выберите файл прошивки с расширением .PUP.", Toast.LENGTH_LONG).show()
+                return
+            }
+            val check = inspectPup(uri)
+            if (!check.first) {
+                Toast.makeText(this, check.second, Toast.LENGTH_LONG).show()
+                return
+            }
+            val flags = data.flags and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            try { contentResolver.takePersistableUriPermission(uri, flags) } catch (_: SecurityException) { }
+            selectedPupUri = uri
+            selectedPupName = name
+            selectedPupSize = check.third
+            prefs.edit().putString(KEY_PUP_URI, uri.toString()).putString(KEY_PUP_NAME, name)
+                .putLong(KEY_PUP_SIZE, selectedPupSize).apply()
+            Toast.makeText(this, "PUP сохранён (${formatFileSize(selectedPupSize)}). QEMU не запускает PS5-прошивки.", Toast.LENGTH_LONG).show()
+            renderContent()
+            return
+        }
+        if (requestCode != REQUEST_ISO) return
         if (name.isNotBlank() && !name.lowercase().endsWith(".iso")) {
             Toast.makeText(this, "Please select an .iso image file.", Toast.LENGTH_LONG).show()
             return
@@ -621,6 +691,48 @@ class MainActivity : Activity() {
         } catch (_: Exception) {
             ""
         }
+    }
+
+    // PUP packages are stored separately and are never passed to QEMU.
+    // Sony PUP containers use the SCEUF signature.
+    private fun inspectPup(uri: Uri): Triple<Boolean, String, Long> {
+        return try {
+            val size = contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length } ?: -1L
+            if (size == 0L) return Triple(false, "Файл PUP пустой.", 0L)
+            val header = contentResolver.openInputStream(uri)?.use { input ->
+                val bytes = ByteArray(5)
+                var offset = 0
+                while (offset < bytes.size) {
+                    val count = input.read(bytes, offset, bytes.size - offset)
+                    if (count <= 0) break
+                    offset += count
+                }
+                bytes.copyOf(offset)
+            } ?: return Triple(false, "Не удалось прочитать файл прошивки.", 0L)
+            if (header.size != 5 || String(header, Charsets.US_ASCII) != "SCEUF")
+                return Triple(false, "Расширение .PUP есть, но заголовок Sony SCEUF не найден. Файл может быть неподходящим или повреждённым.", size)
+            Triple(true, "PUP header recognized.", size)
+        } catch (error: Exception) {
+            Triple(false, "Не удалось проверить PUP: ${error.localizedMessage ?: "ошибка чтения"}.", 0L)
+        }
+    }
+
+    private fun validateSavedPup() {
+        val uri = selectedPupUri ?: return
+        val result = inspectPup(uri)
+        if (!result.first) {
+            selectedPupUri = null
+            selectedPupName = ""
+            selectedPupSize = 0L
+            prefs.edit().remove(KEY_PUP_URI).remove(KEY_PUP_NAME).remove(KEY_PUP_SIZE).apply()
+        } else selectedPupSize = result.third
+    }
+
+    private fun formatFileSize(bytes: Long): String {
+        if (bytes < 0L) return "size unknown"
+        val mb = bytes / (1024.0 * 1024.0)
+        return if (mb >= 1024.0) String.format(java.util.Locale.US, "%.2f GB", mb / 1024.0)
+            else String.format(java.util.Locale.US, "%.1f MB", mb)
     }
 
     private fun validateSavedIso() {
@@ -1027,7 +1139,11 @@ class MainActivity : Activity() {
 
     companion object {
         private const val REQUEST_ISO = 4102
+        private const val REQUEST_PUP = 4103
         private const val KEY_ISO_URI = "iso_uri"
+        private const val KEY_PUP_URI = "pup_uri"
+        private const val KEY_PUP_NAME = "pup_name"
+        private const val KEY_PUP_SIZE = "pup_size"
         private const val KEY_ISO_NAME = "iso_name"
         private const val KEY_RAM_MB = "ram_mb"
         private const val KEY_DISK_GB = "disk_gb"
