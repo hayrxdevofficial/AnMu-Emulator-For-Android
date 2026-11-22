@@ -722,7 +722,7 @@ class MainActivity : Activity() {
                     vmController?.sendPointer(x, y, 1)
                     return true
                 }
-                MotionEvent.ACTION_UP -> {
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     vmController?.sendPointer(x, y, 0)
                     performClick()
                     return true
@@ -741,6 +741,9 @@ class MainActivity : Activity() {
         private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
         private var pointerX = -1f
         private var pointerY = -1f
+        private var downX = 0f
+        private var downY = 0f
+        private var moved = false
 
         init {
             background = rounded(Color.rgb(34, 43, 58), 10f)
@@ -770,16 +773,22 @@ class MainActivity : Activity() {
         override fun onTouchEvent(event: MotionEvent): Boolean {
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
+                    downX = event.x
+                    downY = event.y
+                    moved = false
                     pointerX = event.x
                     pointerY = event.y
-                    forward(event, 1)
+                    forward(event, 0)
                     invalidate()
                     return true
                 }
                 MotionEvent.ACTION_MOVE -> {
                     pointerX = event.x
                     pointerY = event.y
-                    forward(event, 1)
+                    if (kotlin.math.abs(event.x - downX) > dp(8) || kotlin.math.abs(event.y - downY) > dp(8)) {
+                        moved = true
+                    }
+                    forward(event, 0)
                     invalidate()
                     return true
                 }
@@ -787,8 +796,16 @@ class MainActivity : Activity() {
                     pointerX = event.x
                     pointerY = event.y
                     forward(event, 0)
+                    if (!moved) {
+                        forward(event, 1)
+                        forward(event, 0)
+                    }
                     invalidate()
                     performClick()
+                    return true
+                }
+                MotionEvent.ACTION_CANCEL -> {
+                    forward(event, 0)
                     return true
                 }
             }
