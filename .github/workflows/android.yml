@@ -21,6 +21,7 @@ jobs:
           git -C /tmp/podroid checkout e3fc1befa3c135d28bf8d40e3c2264d93fea87ef
           # Build both AArch64 and x86_64 guest machines; expose VNC for the in-app framebuffer.
           sed -i 's/--target-list=aarch64-softmmu/--target-list=aarch64-softmmu,x86_64-softmmu/; s/--disable-vnc/--enable-vnc/' /tmp/podroid/Dockerfile
+          sed -i '/^# SECTION 3: Final Artifacts Stage/i RUN cp /opt/qemu-out/bin/qemu-system-x86_64 /opt/qemu-out/libqemu-system-x86_64.so \\\n    && patchelf --set-soname libqemu-system-x86_64.so /opt/qemu-out/libqemu-system-x86_64.so \\\n    && patchelf --replace-needed libslirp.so.0 libslirp.so /opt/qemu-out/libqemu-system-x86_64.so' /tmp/podroid/Dockerfile
 
       - name: Build QEMU runtime with Android NDK
         run: |
@@ -48,7 +49,7 @@ jobs:
       - name: Upload QEMU runtime
         uses: actions/upload-artifact@v4
         with:
-          name: anmu-qemu-arm64-dual-guest-dual-guest-dual-guest
+          name: anmu-qemu-arm64-dual-guest
           path: dist/qemu/
           if-no-files-found: error
           retention-days: 14
@@ -64,7 +65,7 @@ jobs:
       - name: Download QEMU runtime
         uses: actions/download-artifact@v4
         with:
-          name: anmu-qemu-arm64
+          name: anmu-qemu-arm64-dual-guest
           path: dist/qemu
 
       - name: Package QEMU runtime into Android app
