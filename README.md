@@ -7,7 +7,7 @@ An Android application that boots guest operating systems from ISO files using Q
 - Android 10+ host target (minSdk 29).
 - Minimal interface: Settings and Select ISO before an image is chosen; guest display, keyboard and touchpad after selection.
 - ISO is copied from Android's Storage Access Framework into app-private storage before launch.
-- Configurable guest RAM (1–6 GB), sparse virtual disk (20–30 GB), CPU cores and guest architecture.
+- Configurable guest RAM (128 MB–6 GB), sparse virtual disk (20–30 GB), CPU cores and guest architecture.
 - QEMU 11.1.2 is built for an ARM64 Android host with AArch64 and x86_64 guest machine targets.
 - TCG software CPU emulation; no root, Device Admin or KVM permission is requested.
 - QEMU is launched as an app-owned native process. A loopback-only VNC server supplies the guest framebuffer.
