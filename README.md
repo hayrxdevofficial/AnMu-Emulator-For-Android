@@ -1,68 +1,63 @@
 # AnMu Emulator
 
-A lightweight Android front end for booting ISO images in a QEMU-based virtual machine.
+An Android application that boots guest operating systems from ISO files using QEMU system emulation.
 
-## Current milestone: 0.3.0 (QEMU ARM64 runtime build pipeline)
+## Current milestone: 0.4.0 (QEMU process, framebuffer and input integration)
 
-- Android 10+ support target (minSdk 29).
-- Minimal emulator screen with a large guest-display area.
-- ISO selection through Android's Storage Access Framework; the chosen document permission is persisted.
-- Settings for guest RAM (1–6 GB), virtual disk size (20–30 GB), and CPU cores.
-- Fixed keyboard and mouse controls at the bottom of the screen.
-- No device-admin or root permission is requested.
-- Android NDK / CMake native bridge builds for `arm64-v8a` and `x86_64`.
-- CI now builds a pinned QEMU 11.1.2 Android ARM64 runtime using the Android NDK and packages its runtime libraries and firmware assets into the debug APK.
+- Android 10+ host target (minSdk 29).
+- Minimal interface: Settings and Select ISO before an image is chosen; guest display, keyboard and touchpad after selection.
+- ISO is copied from Android's Storage Access Framework into app-private storage before launch.
+- Configurable guest RAM (1–6 GB), sparse virtual disk (20–30 GB), CPU cores and guest architecture.
+- QEMU 11.1.2 is built for an ARM64 Android host with AArch64 and x86_64 guest machine targets.
+- TCG software CPU emulation; no root, Device Admin or KVM permission is requested.
+- QEMU is launched as an app-owned native process. A loopback-only VNC server supplies the guest framebuffer.
+- Touch input, pointer movement, physical keyboard events and typed text are forwarded through RFB/VNC.
+- QEMU stderr and serial output are kept in app-private files for diagnostics.
 
-**Important:** QEMU is now built from source and included in CI-generated APKs for `arm64-v8a`, but the app does not yet launch the QEMU process or render its guest framebuffer. The JNI Start OS method still reports that VM startup is not implemented. No guest OS is claimed to be running. The current QEMU package is ARM64-only; x86_64 Android devices do not receive this runtime.
+## Important compatibility limits
+
+- **Host device:** this runtime currently targets Android devices with an `arm64-v8a` CPU. The app may install on other ABIs, but the QEMU runtime is not provided for them.
+- **Guest architecture:** x86_64 and AArch64 guest emulation are built into the ARM64 QEMU executable. x86_64 guest emulation on an ARM phone uses TCG and can be slow. AArch64 guests require the bundled EDK2 `QEMU_EFI.fd` firmware.
+- **ISO compatibility:** not every ISO is bootable. The ISO must contain boot media for the selected guest architecture and firmware mode. Select x86_64 for typical PC/Linux desktop ISOs and AArch64 for ARM64 images.
+- **Performance:** TCG is software emulation, not hardware virtualization. Speed depends on the host CPU, available RAM, thermals, guest OS and its drivers. The UI does not claim KVM acceleration.
+- **Memory:** AnMu checks available memory before startup and reduces the requested guest RAM to leave memory for Android. Startup is refused if less than 1 GB can safely be allocated.
+- **Storage:** the virtual disk is a sparse raw image. Its configured maximum size does not mean all of that storage is immediately filled, but the host filesystem still needs room as the guest writes data.
+- **Display/input:** the current VNC client negotiates raw framebuffer updates. High resolutions and rapid full-screen updates can use substantial CPU and memory.
+- **Lifecycle:** QEMU runs while the app process remains alive. Force-stopping the app terminates the child QEMU process. A dedicated foreground-service mode is not yet implemented.
 
 ## QEMU build provenance
 
-The Android ARM64 QEMU build recipe is pinned to commit `e3fc1befa3c135d28bf8d40e3c2264d93fea87ef` of [ExTV/Podroid](https://github.com/ExTV/Podroid). It builds QEMU 11.1.2 with Android NDK r27c and 16 KiB ELF page alignment. The build recipe includes Android-specific compatibility patches. QEMU is licensed under GPL-2.0; see the upstream [QEMU project](https://www.qemu.org) and the pinned build recipe for its build patches and dependency notices.
+The Android ARM64 QEMU build recipe is pinned to commit `e3fc1befa3c135d28bf8d40e3c2264d93fea87ef` of [ExTV/Podroid](https://github.com/ExTV/Podroid), with AnMu's CI applying the dual-guest and VNC build options. QEMU 11.1.2 is cross-compiled with Android NDK r27c. The workflow also builds the AArch64 EDK2 firmware from [Tianocore EDK2](https://github.com/tianocore/edk2).
 
-The CI workflow creates the `anmu-qemu-arm64` artifact, then packages the libraries and firmware into `anmu-debug-apk`. The QEMU artifact is retained for 14 days.
-
-## Resource settings
-
-The 6 GB RAM value is a requested maximum, not a guarantee. The app must calculate a safer per-device limit from available memory before any VM start. A virtual disk is intended to be sparse (grow as data is written), rather than immediately reserving all 20–30 GB.
-
-## Why no administrator permission?
-
-An ordinary Android application cannot grant itself extra CPU virtualization privileges by asking to be a device administrator. Device Admin is for device-management policies, not for QEMU acceleration. AnMu uses the Android document picker for ISO access and keeps its VM files in app storage.
+QEMU is licensed under GPL-2.0. The exact upstream sources and Android-specific build recipe are linked above; dependency and firmware license notices must be retained with redistributed builds.
 
 ## Build
 
-Open this project in Android Studio with JDK 17 and Android SDK Platform 36 installed, then sync and build the `app` module.
+Open the project in Android Studio with JDK 17 and Android SDK Platform 36 installed.
 
-The QEMU libraries are produced by the GitHub Actions workflow and are not committed as binary files. A local Android Studio build therefore builds the app shell and JNI bridge unless the matching QEMU runtime artifact has first been extracted into:
+The QEMU runtime is built by GitHub Actions and is not committed as binary files. The workflow:
+1. Builds QEMU and the ARM64 UEFI firmware.
+2. Packages QEMU executables, required shared libraries and firmware assets.
+3. Builds the Android debug APK.
 
+A local Android Studio build without the downloaded runtime artifact builds only the app shell/JNI library and cannot launch a VM. The runtime files must first be extracted into:
 - `app/src/main/jniLibs/arm64-v8a/`
 - `app/src/main/assets/qemu/`
 
-The Gradle wrapper is not committed yet; use an installed Gradle 8.13 to generate it with:
+The Gradle wrapper is not committed yet; use Gradle 8.13:
 
 ```bash
 gradle wrapper --gradle-version 8.13
-```
-
-Then build:
-
-```bash
 ./gradlew assembleDebug
 ```
 
-## Planned milestones
+## Current CI artifact
 
-1. **0.1.0** — app shell, ISO picker, persistent settings and input-control layout.
-2. **0.2.0** — NDK/CMake toolchain and JNI bridge scaffold for ARM64 and x86-64.
-3. **0.3.0** — pinned QEMU 11.1.2 Android ARM64 source-build pipeline and APK packaging.
-4. **0.4.0** — QEMU process lifecycle, ISO staging, virtual disk creation and guest framebuffer rendering.
-5. **0.5.0** — keyboard/mouse event forwarding, safe memory limits and boot compatibility tests.
+The latest successful QEMU/APK build is available in [GitHub Actions](https://github.com/hayrxdevofficial/AnMu-Emulator-For-Android/actions). The APK artifact is named `anmu-debug-apk`.
 
-## Performance and compatibility notes
+## Project notes
 
-The current runtime uses QEMU TCG software CPU emulation; do not expect hardware-virtualization performance. The actual speed depends on the phone's CPU, RAM, Android build and guest architecture. The current QEMU build targets an AArch64 guest. x86/x86_64 guest support requires a separate QEMU target build and additional testing.
-
-Useful platform documentation:
-- [Android Storage Access Framework](https://developer.android.com/guide/topics/providers/document-provider)
-- [Android file access and persistent URI permissions](https://developer.android.com/training/data-storage/shared/documents-files)
-- [QEMU system emulation overview](https://www.qemu.org/docs/master/system/introduction.html)
+- Android Device Admin is not a CPU virtualization permission and is not requested.
+- ISO access uses Android's document picker and persisted URI grants.
+- QEMU's VNC listener binds to loopback only; it is not exposed to the local network.
+- QEMU uses user-mode networking for guest outbound connectivity.
