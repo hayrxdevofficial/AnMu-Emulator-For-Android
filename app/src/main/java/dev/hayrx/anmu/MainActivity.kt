@@ -214,7 +214,7 @@ class MainActivity : Activity() {
         vmStarting = true
         button.isEnabled = false
         headerStatus.text = "STARTING"
-        val ramMb = prefs.getInt(KEY_RAM_GB, 6).coerceIn(1, 6) * 1024
+        val ramMb = prefs.getInt(KEY_RAM_MB, 2048).coerceIn(128, 6144)
         val cores = prefs.getInt(KEY_CORES, 2).coerceAtLeast(1)
         val diskGb = prefs.getInt(KEY_DISK_GB, 25).coerceIn(20, 30)
         val arch = prefs.getString(KEY_GUEST_ARCH, "x86_64") ?: "x86_64"
@@ -494,7 +494,9 @@ class MainActivity : Activity() {
             setPadding(dp(22), dp(14), dp(22), dp(4))
         }
 
-        val savedRam = prefs.getInt(KEY_RAM_GB, 6).coerceIn(1, 6)
+        val ramOptionsMb = listOf(128, 256, 512, 768, 1024, 1536, 2048, 3072, 4096, 6144)
+        val savedRamMb = prefs.getInt(KEY_RAM_MB, 2048).coerceIn(128, 6144)
+        val savedRamIndex = ramOptionsMb.indices.minByOrNull { kotlin.math.abs(ramOptionsMb[it] - savedRamMb) } ?: 6
         val savedDisk = prefs.getInt(KEY_DISK_GB, 25).coerceIn(20, 30)
         val savedArch = prefs.getString(KEY_GUEST_ARCH, "x86_64") ?: "x86_64"
         content.addView(label("Guest ISO architecture", 13f, muted, true).apply {
@@ -512,17 +514,24 @@ class MainActivity : Activity() {
         val ramValue = label("", 14f, textColor, true)
         content.addView(label("RAM allocation", 13f, muted, true))
         val ramSeek = SeekBar(this).apply {
-            max = 5
-            progress = savedRam - 1
+            max = ramOptionsMb.lastIndex
+            progress = savedRamIndex
         }
-        ramValue.text = "$savedRam GB"
+        fun ramLabel(mb: Int): String = if (mb >= 1024 && mb % 1024 == 0) "${mb / 1024} GB" else "$mb MB"
+        ramValue.text = ramLabel(ramOptionsMb[savedRamIndex])
         content.addView(ramValue)
         content.addView(ramSeek, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, dp(44)
         ))
-        ramSeek.setOnSeekBarChangeListener(simpleSeekListener { value ->
-            ramValue.text = "$value GB"
+        ramSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                ramValue.text = ramLabel(ramOptionsMb[progress.coerceIn(ramOptionsMb.indices)])
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
+            override fun onStopTrackingTouch(seekBar: SeekBar?) = Unit
         })
+        content.addView(label("128–768 MB: lightweight systems. Windows 7 x64 generally needs at least 1 GB.",
+            11f, muted).apply { setPadding(0, dp(2), 0, dp(8)) })
 
         val diskValue = label("$savedDisk GB", 14f, textColor, true)
         content.addView(label("Virtual disk size", 13f, muted, true).apply {
@@ -567,11 +576,11 @@ class MainActivity : Activity() {
             .setView(content)
             .setNegativeButton("Cancel", null)
             .setPositiveButton("Save") { _, _ ->
-                val ram = ramSeek.progress + 1
+                val ram = ramOptionsMb[ramSeek.progress.coerceIn(ramOptionsMb.indices)]
                 val disk = diskSeek.progress + 20
                 val cores = spinner.selectedItemPosition + 1
                 prefs.edit()
-                    .putInt(KEY_RAM_GB, ram)
+                    .putInt(KEY_RAM_MB, ram)
                     .putInt(KEY_DISK_GB, disk)
                     .putInt(KEY_CORES, cores)
                     .putString(KEY_GUEST_ARCH, archOptions[archSpinner.selectedItemPosition])
@@ -822,7 +831,7 @@ class MainActivity : Activity() {
         private const val REQUEST_ISO = 4102
         private const val KEY_ISO_URI = "iso_uri"
         private const val KEY_ISO_NAME = "iso_name"
-        private const val KEY_RAM_GB = "ram_gb"
+        private const val KEY_RAM_MB = "ram_mb"
         private const val KEY_DISK_GB = "disk_gb"
         private const val KEY_CORES = "cpu_cores"
         private const val KEY_GUEST_ARCH = "guest_arch"
