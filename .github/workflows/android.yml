@@ -12,13 +12,15 @@ permissions:
 
 jobs:
   qemu:
-    name: Build QEMU for Android ARM64
+    name: Build QEMU for Android ARM64 host (AArch64 + x86_64 guests)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout pinned QEMU Android build recipe
         run: |
           git clone https://github.com/ExTV/Podroid.git /tmp/podroid
           git -C /tmp/podroid checkout e3fc1befa3c135d28bf8d40e3c2264d93fea87ef
+          # Build both AArch64 and x86_64 guest machines; expose VNC for the in-app framebuffer.
+          sed -i 's/--target-list=aarch64-softmmu/--target-list=aarch64-softmmu,x86_64-softmmu/; s/--disable-vnc/--enable-vnc/' /tmp/podroid/Dockerfile
 
       - name: Build QEMU runtime with Android NDK
         run: |
@@ -31,20 +33,22 @@ jobs:
       - name: Collect QEMU runtime and firmware
         run: |
           set -euo pipefail
-          mkdir -p dist/qemu/lib/arm64-v8a dist/qemu/assets/keymaps
+          mkdir -p dist/qemu/lib/arm64-v8a dist/qemu/assets/qemu
           container_id="$(docker create anmu-qemu-builder)"
           trap 'docker rm -f "$container_id" >/dev/null 2>&1 || true' EXIT
           docker cp "$container_id:/opt/qemu-out/libqemu-system-aarch64.so" dist/qemu/lib/arm64-v8a/
+          docker cp "$container_id:/opt/qemu-out/libqemu-system-x86_64.so" dist/qemu/lib/arm64-v8a/
           docker cp "$container_id:/opt/qemu-out/libslirp.so" dist/qemu/lib/arm64-v8a/
-          docker cp "$container_id:/opt/qemu-out/share/qemu/efi-virtio.rom" dist/qemu/assets/
-          docker cp "$container_id:/opt/qemu-out/share/qemu/keymaps/." dist/qemu/assets/keymaps/
+          docker cp "$container_id:/opt/qemu-out/libpodroid-launcher.so" dist/qemu/lib/arm64-v8a/
+          docker cp "$container_id:/opt/qemu-out/share/qemu/." dist/qemu/assets/qemu/
           test -s dist/qemu/lib/arm64-v8a/libqemu-system-aarch64.so
+          test -s dist/qemu/lib/arm64-v8a/libqemu-system-x86_64.so
           test -s dist/qemu/lib/arm64-v8a/libslirp.so
 
       - name: Upload QEMU runtime
         uses: actions/upload-artifact@v4
         with:
-          name: anmu-qemu-arm64
+          name: anmu-qemu-arm64-dual-guest-dual-guest-dual-guest
           path: dist/qemu/
           if-no-files-found: error
           retention-days: 14
