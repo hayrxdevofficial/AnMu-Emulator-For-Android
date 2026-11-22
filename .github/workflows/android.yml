@@ -21,7 +21,37 @@ jobs:
           git -C /tmp/podroid checkout e3fc1befa3c135d28bf8d40e3c2264d93fea87ef
           # Build both AArch64 and x86_64 guest machines; expose VNC for the in-app framebuffer.
           sed -i 's/--target-list=aarch64-softmmu/--target-list=aarch64-softmmu,x86_64-softmmu/; s/--disable-vnc/--enable-vnc/' /tmp/podroid/Dockerfile
-          sed -i '/^# SECTION 3: Final Artifacts Stage/i RUN cp /opt/qemu-out/bin/qemu-system-x86_64 /opt/qemu-out/libqemu-system-x86_64.so \\\n    && patchelf --set-soname libqemu-system-x86_64.so /opt/qemu-out/libqemu-system-x86_64.so \\\n    && patchelf --replace-needed libslirp.so.0 libslirp.so /opt/qemu-out/libqemu-system-x86_64.so' /tmp/podroid/Dockerfile
+          python3 - <<'PY'
+          path = "/tmp/podroid/Dockerfile"
+          source = open(path, encoding="utf-8").read()
+          marker = "# SECTION 3: Final Artifacts Stage"
+          addition = """RUN cp /opt/qemu-out/bin/qemu-system-x86_64 /opt/qemu-out/libqemu-system-x86_64.so \\
+              && patchelf --set-soname libqemu-system-x86_64.so /opt/qemu-out/libqemu-system-x86_64.so \\
+              && patchelf --replace-needed libslirp.so.0 libslirp.so /opt/qemu-out/libqemu-system-x86_64.so
+
+          """
+          if marker not in source:
+              raise SystemExit("Could not find QEMU Dockerfile final-stage marker")
+          source = source.replace(marker, addition + marker, 1)
+          open(path, "w", encoding="utf-8").write(source)
+          PY
+
+      - name: Build AArch64 UEFI firmware
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y build-essential uuid-dev nasm acpica-tools python3 python-is-python3 gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+          git clone --depth 1 --branch edk2-stable202505 https://github.com/tianocore/edk2.git /tmp/edk2
+          git -C /tmp/edk2 submodule update --init --recursive
+          make -C /tmp/edk2/BaseTools -j2
+          cd /tmp/edk2
+          export GCC5_AARCH64_PREFIX=aarch64-linux-gnu-
+          . ./edksetup.sh
+          build -a AARCH64 -t GCC5 -p ArmVirtPkg/ArmVirtQemu.dsc -b RELEASE -n 2
+          mkdir -p /tmp/anmu-qemu-firmware
+          firmware="$(find Build -name QEMU_EFI.fd -type f -print -quit)"
+          test -n "$firmware"
+          cp "$firmware" /tmp/anmu-qemu-firmware/QEMU_EFI.fd
 
       - name: Build QEMU runtime with Android NDK
         run: |
@@ -42,6 +72,7 @@ jobs:
           docker cp "$container_id:/opt/qemu-out/libslirp.so" dist/qemu/lib/arm64-v8a/
           docker cp "$container_id:/opt/qemu-out/libpodroid-launcher.so" dist/qemu/lib/arm64-v8a/
           docker cp "$container_id:/opt/qemu-out/share/qemu/." dist/qemu/assets/qemu/
+          cp /tmp/anmu-qemu-firmware/QEMU_EFI.fd dist/qemu/assets/qemu/
           test -s dist/qemu/lib/arm64-v8a/libqemu-system-aarch64.so
           test -s dist/qemu/lib/arm64-v8a/libqemu-system-x86_64.so
           test -s dist/qemu/lib/arm64-v8a/libslirp.so
