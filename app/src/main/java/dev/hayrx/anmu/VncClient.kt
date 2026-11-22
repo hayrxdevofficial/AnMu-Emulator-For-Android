@@ -66,7 +66,7 @@ class VncClient(
 
                 width = input.readUnsignedShort()
                 height = input.readUnsignedShort()
-                if (width !in 1..4096 || height !in 1..4096) {
+                if (width !in 1..2560 || height !in 1..1600) {
                     throw IOException("QEMU returned an invalid framebuffer size: ${width}x${height}.")
                 }
                 skipFully(input, 16) // server pixel format; we set ours below
