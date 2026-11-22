@@ -45,7 +45,6 @@ class QemuVmController(
         guestArchitecture: String
     ) {
         check(!isRunning) { "A virtual machine is already running." }
-        stopRequested = false
         if (Build.SUPPORTED_ABIS.none { it == "arm64-v8a" }) {
             throw IOException("This QEMU runtime currently requires an ARM64 Android device.")
         }
@@ -75,6 +74,7 @@ class QemuVmController(
         val iso = copyIsoToPrivateStorage(isoUri)
         onStatus("Preparing sparse virtual disk...")
         val disk = prepareSparseDisk(diskGb.coerceIn(20, 30))
+        if (stopRequested) throw IOException("VM startup was cancelled.")
 
         val memory = ActivityManager.MemoryInfo()
         (context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager).getMemoryInfo(memory)
@@ -134,6 +134,7 @@ class QemuVmController(
         val env = builder.environment()
         env["LD_LIBRARY_PATH"] = nativeDir.absolutePath + ":" + (env["LD_LIBRARY_PATH"] ?: "")
 
+        if (stopRequested) throw IOException("VM startup was cancelled.")
         onStatus("Starting QEMU ($arch guest, TCG software emulation)...")
         val started = CountDownLatch(1)
         val launchError = AtomicReference<Throwable?>(null)
