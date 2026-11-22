@@ -4,6 +4,7 @@ project(anmu_native LANGUAGES CXX)
 add_library(anmu_native SHARED
     anmu_native.cpp
     ps5/memory/guest_memory.cpp
+    ps5/memory/x64_paging.cpp
     ps5/input/controller_state.cpp
     ps5/cpu/x64_cpu.cpp
 )
