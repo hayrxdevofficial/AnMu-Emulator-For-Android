@@ -114,7 +114,7 @@ class QemuVmController(
         args += listOf("-device", "scsi-cd,drive=cd0")
         args += listOf("-drive", "if=none,id=hd0,file=${disk.absolutePath},format=raw")
         args += listOf("-device", "virtio-blk-pci,drive=hd0")
-        args += listOf("-boot", "order=c,d,menu=on")
+        args += listOf("-boot", "order=cd,menu=on")
         args += listOf("-netdev", "user,id=net0")
         args += listOf("-device", "virtio-net-pci,netdev=net0")
         args += listOf("-device", "qemu-xhci,id=usb")
