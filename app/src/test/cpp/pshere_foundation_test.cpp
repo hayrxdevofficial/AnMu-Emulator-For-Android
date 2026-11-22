@@ -1,5 +1,6 @@
 #include "ps5/input/controller_state.h"
 #include "ps5/memory/guest_memory.h"
+#include "ps5/memory/x64_paging.h"
 
 #include <cassert>
 #include <cmath>
@@ -24,6 +25,31 @@ int main() {
     assert(!memory.read(0x10FF, &destination, sizeof(destination)));
     assert(memory.unmap(0x1000));
     assert(memory.mapped_region_count() == 0);
+
+    // Four-level x86-64 paging: map one virtual 4 KiB page.
+    assert(memory.map(0x100000, 64U * 1024U,
+                      MemoryPermission::Read | MemoryPermission::Write));
+    assert(memory.map(0x200000, 4096,
+                      MemoryPermission::Read | MemoryPermission::Write |
+                      MemoryPermission::Execute));
+    anmu::ps5::X64PageTable paging(memory, 0x100000, 0x100000, 64U * 1024U);
+    assert(paging.valid());
+    assert(paging.map_page(0x40000000, 0x200000, false, true));
+    assert(paging.allocated_table_pages() == 4U);
+    std::uint64_t translated = 0;
+    assert(paging.translate(0x40000123, anmu::ps5::PageAccess::Read, translated));
+    assert(translated == 0x200123);
+    assert(!paging.translate(0x40000000, anmu::ps5::PageAccess::Write, translated));
+    assert(paging.translate(0x40000000, anmu::ps5::PageAccess::Execute, translated));
+    assert(!paging.map_page(0x40000000, 0x200000, true, true));
+    assert(!paging.translate(0x0001000000000000ULL,
+                             anmu::ps5::PageAccess::Read, translated));
+    assert(paging.unmap_page(0x40000000));
+    assert(!paging.translate(0x40000000, anmu::ps5::PageAccess::Read, translated));
+
+    anmu::ps5::X64PageTable no_space(memory, 0x100000, 0x100000, 4096);
+    assert(no_space.valid());
+    assert(!no_space.map_page(0x80000000, 0x200000, true, true));
 
     ControllerState controller;
     ControllerSnapshot event;
