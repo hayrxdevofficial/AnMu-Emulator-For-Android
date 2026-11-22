@@ -77,6 +77,8 @@ jobs:
           docker cp "$container_id:/opt/qemu-out/libslirp.so" dist/qemu/lib/arm64-v8a/
           docker cp "$container_id:/opt/qemu-out/libpodroid-launcher.so" dist/qemu/lib/arm64-v8a/
           docker cp "$container_id:/opt/qemu-out/share/qemu/." dist/qemu/assets/qemu/
+          docker cp "$container_id:/qemu-11.1.2/COPYING" dist/qemu/assets/qemu/QEMU-COPYING.txt
+          cp /tmp/podroid/LICENSE dist/qemu/assets/qemu/PODROID-LICENSE.txt
           cp /tmp/anmu-qemu-firmware/QEMU_EFI.fd dist/qemu/assets/qemu/
           cp /tmp/anmu-qemu-firmware/EDK2-LICENSE.txt dist/qemu/assets/qemu/
           test -s dist/qemu/lib/arm64-v8a/libqemu-system-aarch64.so
