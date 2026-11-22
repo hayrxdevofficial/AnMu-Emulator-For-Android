@@ -35,11 +35,8 @@ import kotlin.math.max
 import kotlin.math.min
 
 /**
- * AnMu 0.1.0 UI foundation.
- *
- * The ISO picker and preferences are functional. Booting an operating system is deliberately
- * unavailable until the QEMU native backend is integrated; this activity never simulates a
- * successful boot.
+ * AnMu 0.4.0 UI. QemuVmController owns the native QEMU process and VNC connection;
+ * this activity displays the framebuffer and forwards guest input.
  */
 class MainActivity : Activity() {
 
@@ -311,7 +308,12 @@ class MainActivity : Activity() {
         typingDialogOpen = true
         dialog.setOnDismissListener { typingDialogOpen = false }
         dialog.show()
+        dialog.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE)
         editor.requestFocus()
+        editor.post {
+            (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager)
+                .showSoftInput(editor, InputMethodManager.SHOW_IMPLICIT)
+        }
     }
 
     private fun sendSpecialKey(name: String) {
@@ -412,6 +414,10 @@ class MainActivity : Activity() {
     }
 
     private fun openIsoPicker() {
+        if (vmRunning || vmStarting) {
+            Toast.makeText(this, "Stop the guest OS before changing its ISO.", Toast.LENGTH_SHORT).show()
+            return
+        }
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
             type = "*/*"
@@ -550,7 +556,7 @@ class MainActivity : Activity() {
         val recommended = max(1, min(6, physicalGb.toInt() - 1))
         content.addView(label(
             "Device RAM: %.1f GB. Recommended VM setting: up to $recommended GB. " +
-                "The final limit must be checked again before the native engine starts. " +
+                "The final limit is checked again before QEMU starts. " +
                 "A 20–30 GB virtual disk should be sparse and grow as data is written."
                     .format(physicalGb),
             11f, muted
