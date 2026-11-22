@@ -248,10 +248,10 @@ class MainActivity : Activity() {
     private fun applyDevicePresentation() {
         if (!::page.isInitialized || selectedIsoUri == null) return
         val mode = resolvedInterfaceMode()
-        val hide = mode == "pc" || mode == "console" ||
+        val hide = vmRunning && (mode == "pc" || mode == "console" ||
             (selectedInterfaceMode() == "auto" &&
                 hasExternalInput(InputDevice.SOURCE_KEYBOARD) &&
-                hasExternalInput(InputDevice.SOURCE_MOUSE))
+                hasExternalInput(InputDevice.SOURCE_MOUSE)))
         setChromeHidden(hide)
         headerStatus.contentDescription = if (mode == "console")
             "Console mode: gamepad buttons and sticks are mapped to guest keys"
@@ -317,6 +317,7 @@ class MainActivity : Activity() {
                     button.text = "Stop OS"
                     button.isEnabled = true
                     headerStatus.text = "VM RUNNING"
+                    applyDevicePresentation()
                     Toast.makeText(this, "QEMU is running. The guest may still be booting.", Toast.LENGTH_LONG).show()
                 }
             } catch (error: Exception) {
