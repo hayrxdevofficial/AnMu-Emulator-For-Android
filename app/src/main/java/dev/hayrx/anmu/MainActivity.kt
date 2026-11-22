@@ -67,6 +67,7 @@ class MainActivity : Activity() {
     private lateinit var page: LinearLayout
     private lateinit var contentFrame: FrameLayout
     private lateinit var headerStatus: TextView
+    private var appHeader: View? = null
 
     private val accent = Color.rgb(113, 155, 255)
     private val background = Color.rgb(12, 15, 22)
@@ -129,6 +130,7 @@ class MainActivity : Activity() {
         header.addView(headerStatus, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
         ))
+        appHeader = header
 
         contentFrame = FrameLayout(this)
         page.addView(header)
@@ -282,6 +284,7 @@ class MainActivity : Activity() {
     private fun setChromeHidden(hidden: Boolean) {
         chromeHidden = hidden
         chromePanel?.visibility = if (hidden) View.GONE else View.VISIBLE
+        appHeader?.visibility = if (hidden) View.GONE else View.VISIBLE
         if (hidden) {
             @Suppress("DEPRECATION")
             window.decorView.systemUiVisibility = (
