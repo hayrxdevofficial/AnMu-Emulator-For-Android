@@ -652,7 +652,7 @@ class MainActivity : Activity() {
             selectedPupSize = check.third
             prefs.edit().putString(KEY_PUP_URI, uri.toString()).putString(KEY_PUP_NAME, name)
                 .putLong(KEY_PUP_SIZE, selectedPupSize).apply()
-            Toast.makeText(this, "PUP сохранён (${formatFileSize(selectedPupSize)}). QEMU не запускает PS5-прошивки.", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "${check.second} Файл сохранён (${formatFileSize(selectedPupSize)}). Это не означает, что AnMu уже умеет запускать эту консоль.", Toast.LENGTH_LONG).show()
             renderContent()
             return
         }
@@ -709,9 +709,21 @@ class MainActivity : Activity() {
                 }
                 bytes.copyOf(offset)
             } ?: return Triple(false, "Не удалось прочитать файл прошивки.", 0L)
-            if (header.size != 5 || String(header, Charsets.US_ASCII) != "SCEUF")
-                return Triple(false, "Расширение .PUP есть, но заголовок Sony SCEUF не найден. Файл может быть неподходящим или повреждённым.", size)
-            Triple(true, "PUP header recognized.", size)
+            val magic = String(header, Charsets.US_ASCII)
+            // SCEUF is used by legacy PS3 PUP packages.
+            // PS4/PS5 update packages use an SLB2 outer container instead.
+            val format = when {
+                header.size >= 5 && magic.startsWith("SCEUF") ->
+                    "Распознан контейнер PUP (SCEUF, семейство PS3)."
+                header.size >= 4 && magic.startsWith("SLB2") ->
+                    "Распознан контейнер PUP (SLB2, семейство PS4/PS5)."
+                else -> null
+            }
+            if (format == null) {
+                val hex = header.joinToString(" ") { "%02X".format(it) }
+                return Triple(false, "Неизвестный заголовок PUP ($hex). Для PS3 ожидается SCEUF, для PS4/PS5 — SLB2. Файл может быть неподходящим или повреждённым.", size)
+            }
+            Triple(true, format, size)
         } catch (error: Exception) {
             Triple(false, "Не удалось проверить PUP: ${error.localizedMessage ?: "ошибка чтения"}.", 0L)
         }
