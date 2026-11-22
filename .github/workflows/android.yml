@@ -11,12 +11,65 @@ permissions:
   contents: read
 
 jobs:
+  qemu:
+    name: Build QEMU for Android ARM64
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout pinned QEMU Android build recipe
+        run: |
+          git clone https://github.com/ExTV/Podroid.git /tmp/podroid
+          git -C /tmp/podroid checkout e3fc1befa3c135d28bf8d40e3c2264d93fea87ef
+
+      - name: Build QEMU runtime with Android NDK
+        run: |
+          docker build --progress=plain \
+            --target qemu-builder \
+            --build-arg QEMU_VERSION=11.1.2 \
+            --tag anmu-qemu-builder \
+            /tmp/podroid
+
+      - name: Collect QEMU runtime and firmware
+        run: |
+          set -euo pipefail
+          mkdir -p dist/qemu/lib/arm64-v8a dist/qemu/assets/keymaps
+          container_id="$(docker create anmu-qemu-builder)"
+          trap 'docker rm -f "$container_id" >/dev/null 2>&1 || true' EXIT
+          docker cp "$container_id:/opt/qemu-out/libqemu-system-aarch64.so" dist/qemu/lib/arm64-v8a/
+          docker cp "$container_id:/opt/qemu-out/libslirp.so" dist/qemu/lib/arm64-v8a/
+          docker cp "$container_id:/opt/qemu-out/share/qemu/efi-virtio.rom" dist/qemu/assets/
+          docker cp "$container_id:/opt/qemu-out/share/qemu/keymaps/." dist/qemu/assets/keymaps/
+          test -s dist/qemu/lib/arm64-v8a/libqemu-system-aarch64.so
+          test -s dist/qemu/lib/arm64-v8a/libslirp.so
+
+      - name: Upload QEMU runtime
+        uses: actions/upload-artifact@v4
+        with:
+          name: anmu-qemu-arm64
+          path: dist/qemu/
+          if-no-files-found: error
+          retention-days: 14
+
   build:
     name: Build debug APK
     runs-on: ubuntu-latest
+    needs: qemu
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Download QEMU runtime
+        uses: actions/download-artifact@v4
+        with:
+          name: anmu-qemu-arm64
+          path: dist/qemu
+
+      - name: Package QEMU runtime into Android app
+        run: |
+          set -euo pipefail
+          mkdir -p app/src/main/jniLibs/arm64-v8a app/src/main/assets/qemu
+          cp dist/qemu/lib/arm64-v8a/*.so app/src/main/jniLibs/arm64-v8a/
+          cp -R dist/qemu/assets/. app/src/main/assets/qemu/
+          find app/src/main/jniLibs/arm64-v8a app/src/main/assets/qemu -type f -printf '%p %s bytes\\n'
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
