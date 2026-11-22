@@ -93,7 +93,7 @@ class QemuVmController(
         val actualRam = requestedRamMb.coerceIn(128, 6144).coerceAtMost(safeRamMb)
         val actualCpus = requestedCpus.coerceIn(1, Runtime.getRuntime().availableProcessors().coerceAtLeast(1))
         if (actualRam < requestedRamMb) {
-            onStatus("RAM limited to ${actualRam / 1024} GB to protect Android")
+            onStatus("RAM limited to $actualRam MB to protect Android")
         }
 
         val display = reserveVncDisplay()
