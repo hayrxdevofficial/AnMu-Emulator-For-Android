@@ -32,6 +32,7 @@ class QemuVmController(
     @Volatile private var launchThread: Thread? = null
     @Volatile private var exitCode: Int? = null
     @Volatile private var lastLaunchError: Throwable? = null
+    @Volatile private var stopRequested = false
 
     val isRunning: Boolean
         get() = process?.isAlive == true
@@ -44,6 +45,7 @@ class QemuVmController(
         guestArchitecture: String
     ) {
         check(!isRunning) { "A virtual machine is already running." }
+        stopRequested = false
         if (Build.SUPPORTED_ABIS.none { it == "arm64-v8a" }) {
             throw IOException("This QEMU runtime currently requires an ARM64 Android device.")
         }
@@ -159,6 +161,10 @@ class QemuVmController(
         }
         launchError.get()?.let { throw IOException("Could not launch QEMU: ${it.localizedMessage}", it) }
         val child = process ?: throw IOException("QEMU process was not created.")
+        if (stopRequested) {
+            child.destroy()
+            throw IOException("VM startup was cancelled.")
+        }
         if (!child.isAlive) {
             throw IOException("QEMU exited during startup (code ${exitCode}).\n${readErrorTail(stderrLog)}")
         }
@@ -172,6 +178,11 @@ class QemuVmController(
                 throw IOException("QEMU stopped before the display was ready.\n${readErrorTail(stderrLog)}", error)
             }
             throw IOException("QEMU started, but its VNC display could not connect: ${error.localizedMessage}", error)
+        }
+        if (stopRequested) {
+            vnc.close()
+            child.destroy()
+            throw IOException("VM startup was cancelled.")
         }
         if (!child.isAlive) {
             vnc.close()
@@ -199,6 +210,7 @@ class QemuVmController(
     }
 
     fun stop() {
+        stopRequested = true
         vncClient?.close()
         vncClient = null
         val child = process
