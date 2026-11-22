@@ -225,7 +225,16 @@ class MainActivity : Activity() {
             onFrame = { bitmap -> runOnUiThread { display.updateFrame(bitmap) } },
             onStatus = { status ->
                 runOnUiThread {
-                    if (!isFinishing) headerStatus.text = status.uppercase().take(22)
+                    if (!isFinishing) {
+                        headerStatus.text = status.uppercase().take(22)
+                        if (status.startsWith("QEMU stopped")) {
+                            vmRunning = false
+                            vmStarting = false
+                            vmController = null
+                            button.text = "Start OS"
+                            button.isEnabled = true
+                        }
+                    }
                 }
             }
         )
