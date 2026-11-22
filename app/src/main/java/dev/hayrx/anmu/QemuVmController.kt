@@ -83,14 +83,14 @@ class QemuVmController(
 
         val memory = ActivityManager.MemoryInfo()
         (context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager).getMemoryInfo(memory)
-        val reserveMb = 1024L
+        val reserveMb = 512L
         val availableAfterReserveMb = (memory.availMem / (1024L * 1024L)) - reserveMb
         val halfPhysicalRamMb = (memory.totalMem / (1024L * 1024L) / 2L)
         val safeRamMb = minOf(availableAfterReserveMb, halfPhysicalRamMb).toInt()
-        if (safeRamMb < 1024) {
-            throw IOException("Not enough free RAM to safely start a 1 GB guest. Close other apps and try again.")
+        if (safeRamMb < 128) {
+            throw IOException("Not enough free RAM to start even a 128 MB guest. Close other apps and try again.")
         }
-        val actualRam = requestedRamMb.coerceIn(1024, 6144).coerceAtMost(safeRamMb)
+        val actualRam = requestedRamMb.coerceIn(128, 6144).coerceAtMost(safeRamMb)
         val actualCpus = requestedCpus.coerceIn(1, Runtime.getRuntime().availableProcessors().coerceAtLeast(1))
         if (actualRam < requestedRamMb) {
             onStatus("RAM limited to ${actualRam / 1024} GB to protect Android")
@@ -100,8 +100,8 @@ class QemuVmController(
         val serialLog = File(context.filesDir, "qemu-serial.log")
         val stderrLog = File(context.filesDir, "qemu-stderr.log")
         val args = mutableListOf<String>()
-        args += listOf("-machine", if (arch == "aarch64") "virt,gic-version=3" else "q35")
-        args += listOf("-cpu", "max")
+        args += listOf("-machine", if (arch == "aarch64") "virt,gic-version=3" else "pc")
+        args += listOf("-cpu", if (arch == "aarch64") "max" else "qemu64")
         args += listOf("-accel", "tcg,thread=multi")
         args += listOf("-smp", actualCpus.toString())
         args += listOf("-m", actualRam.toString())
@@ -109,21 +109,26 @@ class QemuVmController(
         if (arch == "aarch64") {
             args += listOf("-bios", File(firmwareDir, "QEMU_EFI.fd").absolutePath)
             args += listOf("-device", "virtio-gpu-pci")
+            args += listOf("-drive", "if=none,id=cd0,file=${iso.absolutePath},media=cdrom,readonly=on")
+            args += listOf("-device", "virtio-scsi-pci,id=scsi0")
+            args += listOf("-device", "scsi-cd,drive=cd0")
+            args += listOf("-drive", "if=none,id=hd0,file=${disk.absolutePath},format=raw")
+            args += listOf("-device", "virtio-blk-pci,drive=hd0")
+            args += listOf("-device", "virtio-net-pci,netdev=net0")
+            args += listOf("-device", "qemu-xhci,id=usb")
+            args += listOf("-device", "usb-kbd,bus=usb.0")
+            args += listOf("-device", "usb-tablet,bus=usb.0")
         } else {
+            // Legacy PC defaults improve compatibility with Windows 7 and older x86 OSes:
+            // SeaBIOS + IDE storage + standard VGA + emulated Intel NIC.
             args += listOf("-bios", File(firmwareDir, "bios-256k.bin").absolutePath)
             args += listOf("-vga", "std")
+            args += listOf("-drive", "file=${iso.absolutePath},if=ide,index=2,media=cdrom,readonly=on")
+            args += listOf("-drive", "file=${disk.absolutePath},if=ide,index=0,format=raw")
+            args += listOf("-device", "e1000,netdev=net0")
         }
-        args += listOf("-drive", "if=none,id=cd0,file=${iso.absolutePath},media=cdrom,readonly=on")
-        args += listOf("-device", "virtio-scsi-pci,id=scsi0")
-        args += listOf("-device", "scsi-cd,drive=cd0")
-        args += listOf("-drive", "if=none,id=hd0,file=${disk.absolutePath},format=raw")
-        args += listOf("-device", "virtio-blk-pci,drive=hd0")
         args += listOf("-boot", "order=cd,menu=on")
         args += listOf("-netdev", "user,id=net0")
-        args += listOf("-device", "virtio-net-pci,netdev=net0")
-        args += listOf("-device", "qemu-xhci,id=usb")
-        args += listOf("-device", "usb-kbd,bus=usb.0")
-        args += listOf("-device", "usb-tablet,bus=usb.0")
         args += listOf("-vnc", "127.0.0.1:$display")
         args += listOf("-serial", "file:${serialLog.absolutePath}")
         args += listOf("-monitor", "none")
