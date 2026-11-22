@@ -79,7 +79,9 @@ class QemuVmController(
         val memory = ActivityManager.MemoryInfo()
         (context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager).getMemoryInfo(memory)
         val reserveMb = 1024L
-        val safeRamMb = ((memory.availMem / (1024L * 1024L)) - reserveMb).toInt()
+        val availableAfterReserveMb = (memory.availMem / (1024L * 1024L)) - reserveMb
+        val halfPhysicalRamMb = (memory.totalMem / (1024L * 1024L) / 2L)
+        val safeRamMb = minOf(availableAfterReserveMb, halfPhysicalRamMb).toInt()
         if (safeRamMb < 1024) {
             throw IOException("Not enough free RAM to safely start a 1 GB guest. Close other apps and try again.")
         }
