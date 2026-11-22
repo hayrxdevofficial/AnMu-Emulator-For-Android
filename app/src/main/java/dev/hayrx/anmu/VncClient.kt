@@ -183,7 +183,12 @@ class VncClient(
 
     fun sendText(value: String) {
         value.codePoints().forEach { code ->
-            val symbol = if (code <= 0xff) code else 0x01000000 or code
+            val symbol = when (code) {
+                10, 13 -> 0xff0d
+                9 -> 0xff09
+                8 -> 0xff08
+                else -> if (code <= 0xff) code else 0x01000000 or code
+            }
             sendKey(symbol, true)
             sendKey(symbol, false)
         }
