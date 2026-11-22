@@ -4,6 +4,8 @@ import android.app.Activity
 import android.app.ActivityManager
 import android.app.AlertDialog
 import android.content.Context
+import android.content.res.Configuration
+import android.view.InputDevice
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -49,6 +51,9 @@ class MainActivity : Activity() {
     private var vmRunning = false
     private var typingDialogOpen = false
     private var guestDisplayView: GuestDisplayView? = null
+    private var chromePanel: LinearLayout? = null
+    private var chromeHidden = false
+    private val gamepadPressedKeys = mutableSetOf<Int>()
 
     private lateinit var page: LinearLayout
     private lateinit var contentFrame: FrameLayout
@@ -67,6 +72,16 @@ class MainActivity : Activity() {
         validateSavedIso()
         buildPage()
         renderContent()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        applyDevicePresentation()
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        applyDevicePresentation()
     }
 
     private fun buildPage() {
@@ -144,41 +159,44 @@ class MainActivity : Activity() {
      * After an ISO is selected, the guest display takes the available upper area.
      * The keyboard and mouse panels remain docked at the bottom.
      */
+    /**
+     * In PC/Console mode the guest display fills the screen.
+     * Tap the display to reveal the AnMu controls again.
+     */
     private fun showSelectedState() {
-        val layout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-        }
-
-        val isoRow = LinearLayout(this).apply {
-            gravity = Gravity.CENTER_VERTICAL
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(dp(4), dp(3), dp(4), dp(10))
-        }
-        val isoInfo = label(selectedIsoName.ifBlank { "Selected ISO image" }, 13f, textColor, true).apply {
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
-        }
-        isoRow.addView(isoInfo, LinearLayout.LayoutParams(0, dp(38), 1f))
-        val changeButton = smallButton("CHANGE") { openIsoPicker() }
-        isoRow.addView(changeButton)
-        layout.addView(isoRow)
-
+        val layout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val display = GuestDisplayView(this)
         guestDisplayView = display
         layout.addView(display, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
         ))
 
+        val chrome = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        chromePanel = chrome
+
+        val isoRow = LinearLayout(this).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(dp(4), dp(3), dp(4), dp(6))
+        }
+        val isoInfo = label(selectedIsoName.ifBlank { "Selected ISO image" }, 13f, textColor, true).apply {
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
+        }
+        isoRow.addView(isoInfo, LinearLayout.LayoutParams(0, dp(38), 1f))
+        isoRow.addView(smallButton("CHANGE") { openIsoPicker() })
+        chrome.addView(isoRow)
+
         val inputDock = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(12), 0, dp(10))
+            setPadding(0, dp(4), 0, dp(8))
         }
-        inputDock.addView(buildKeyboardPanel(), LinearLayout.LayoutParams(0, dp(112), 1f).apply {
+        inputDock.addView(buildKeyboardPanel(), LinearLayout.LayoutParams(0, dp(100), 1f).apply {
             marginEnd = dp(8)
         })
-        inputDock.addView(buildMousePanel(), LinearLayout.LayoutParams(0, dp(112), 1f))
-        layout.addView(inputDock)
+        inputDock.addView(buildMousePanel(), LinearLayout.LayoutParams(0, dp(100), 1f))
+        chrome.addView(inputDock)
 
         val footer = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -186,24 +204,77 @@ class MainActivity : Activity() {
         }
         lateinit var startButton: Button
         startButton = actionButton(if (vmRunning) "Stop OS" else "Start OS", true) {
-            if (vmRunning || vmController?.isRunning == true) {
-                stopVm(startButton)
-            } else {
-                startVm(display, startButton)
-            }
+            if (vmRunning || vmController?.isRunning == true) stopVm(startButton)
+            else startVm(display, startButton)
         }
         startButton.isEnabled = !vmStarting
-        val settingsButton = actionButton("Settings", false) { showSettings() }
-        footer.addView(startButton, LinearLayout.LayoutParams(0, dp(50), 1f).apply {
+        footer.addView(startButton, LinearLayout.LayoutParams(0, dp(48), 1f).apply {
             marginEnd = dp(8)
         })
-        footer.addView(settingsButton, LinearLayout.LayoutParams(0, dp(50), 1f))
-        layout.addView(footer)
+        footer.addView(actionButton("Settings", false) { showSettings() },
+            LinearLayout.LayoutParams(0, dp(48), 1f))
+        chrome.addView(footer)
+        layout.addView(chrome)
 
+        display.setOnClickListener { if (chromeHidden) setChromeHidden(false) }
         contentFrame.addView(layout, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
         ))
+        applyDevicePresentation()
     }
+
+    private fun selectedInterfaceMode(): String =
+        prefs.getString(KEY_INTERFACE_MODE, "auto") ?: "auto"
+
+    private fun hasExternalInput(source: Int): Boolean =
+        InputDevice.getDeviceIds().any { id ->
+            val device = InputDevice.getDevice(id)
+            device != null && !device.isVirtual && (device.sources and source) == source
+        }
+
+    private fun resolvedInterfaceMode(): String = when (selectedInterfaceMode()) {
+        "phone" -> "phone"
+        "pc" -> "pc"
+        "console" -> "console"
+        else -> {
+            val deskMode = (resources.configuration.uiMode and Configuration.UI_MODE_TYPE_MASK) ==
+                Configuration.UI_MODE_TYPE_DESK
+            val keyboardAndMouse = hasExternalInput(InputDevice.SOURCE_KEYBOARD) &&
+                hasExternalInput(InputDevice.SOURCE_MOUSE)
+            if (deskMode || keyboardAndMouse) "pc" else "phone"
+        }
+    }
+
+    private fun applyDevicePresentation() {
+        if (!::page.isInitialized || selectedIsoUri == null) return
+        val mode = resolvedInterfaceMode()
+        val hide = mode == "pc" || mode == "console" ||
+            (selectedInterfaceMode() == "auto" &&
+                hasExternalInput(InputDevice.SOURCE_KEYBOARD) &&
+                hasExternalInput(InputDevice.SOURCE_MOUSE))
+        setChromeHidden(hide)
+        headerStatus.contentDescription = if (mode == "console")
+            "Console mode: gamepad buttons and sticks are mapped to guest keys"
+        else "AnMu emulator status"
+    }
+
+    private fun setChromeHidden(hidden: Boolean) {
+        chromeHidden = hidden
+        chromePanel?.visibility = if (hidden) View.GONE else View.VISIBLE
+        if (hidden) {
+            @Suppress("DEPRECATION")
+            window.decorView.systemUiVisibility = (
+                View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                    View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                    View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                )
+        } else {
+            @Suppress("DEPRECATION")
+            window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+        }
+    }
+
+    private fun isConsoleInputEnabled(): Boolean = resolvedInterfaceMode() == "console"
 
     private fun startVm(display: GuestDisplayView, button: Button) {
         val iso = selectedIsoUri ?: run {
@@ -330,13 +401,66 @@ class MainActivity : Activity() {
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (vmRunning && !typingDialogOpen) {
+            val down = event.action == KeyEvent.ACTION_DOWN
+            val up = event.action == KeyEvent.ACTION_UP
+            if (isConsoleInputEnabled() && (down || up)) {
+                val mapped = gamepadKeySym(event.keyCode)
+                if (mapped != null) {
+                    vmController?.sendKey(mapped, down)
+                    return true
+                }
+            }
             val symbol = keySym(event)
-            if (symbol != null && event.action in listOf(KeyEvent.ACTION_DOWN, KeyEvent.ACTION_UP)) {
-                vmController?.sendKey(symbol, event.action == KeyEvent.ACTION_DOWN)
+            if (symbol != null && (down || up)) {
+                vmController?.sendKey(symbol, down)
                 return true
             }
         }
         return super.dispatchKeyEvent(event)
+    }
+
+    override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
+        if (vmRunning && isConsoleInputEnabled() && event.action == MotionEvent.ACTION_MOVE &&
+            (event.source and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK
+        ) {
+            val x = event.getAxisValue(MotionEvent.AXIS_X)
+            val y = event.getAxisValue(MotionEvent.AXIS_Y)
+            val hatX = event.getAxisValue(MotionEvent.AXIS_HAT_X)
+            val hatY = event.getAxisValue(MotionEvent.AXIS_HAT_Y)
+            updateGamepadAxis(0xff51, x < -0.5f || hatX < -0.5f)
+            updateGamepadAxis(0xff53, x > 0.5f || hatX > 0.5f)
+            updateGamepadAxis(0xff52, y < -0.5f || hatY < -0.5f)
+            updateGamepadAxis(0xff54, y > 0.5f || hatY > 0.5f)
+            return true
+        }
+        return super.dispatchGenericMotionEvent(event)
+    }
+
+    private fun updateGamepadAxis(keySym: Int, pressed: Boolean) {
+        val wasPressed = gamepadPressedKeys.contains(keySym)
+        if (pressed && !wasPressed) {
+            gamepadPressedKeys.add(keySym)
+            vmController?.sendKey(keySym, true)
+        } else if (!pressed && wasPressed) {
+            gamepadPressedKeys.remove(keySym)
+            vmController?.sendKey(keySym, false)
+        }
+    }
+
+    private fun gamepadKeySym(code: Int): Int? = when (code) {
+        KeyEvent.KEYCODE_BUTTON_A -> 0x20
+        KeyEvent.KEYCODE_BUTTON_B -> 0xff1b
+        KeyEvent.KEYCODE_BUTTON_X -> 0xff0d
+        KeyEvent.KEYCODE_BUTTON_Y -> 0xff09
+        KeyEvent.KEYCODE_BUTTON_L1 -> 0xffe1
+        KeyEvent.KEYCODE_BUTTON_R1 -> 0xffe3
+        KeyEvent.KEYCODE_BUTTON_START -> 0xff0d
+        KeyEvent.KEYCODE_BUTTON_SELECT -> 0xff1b
+        KeyEvent.KEYCODE_DPAD_LEFT -> 0xff51
+        KeyEvent.KEYCODE_DPAD_UP -> 0xff52
+        KeyEvent.KEYCODE_DPAD_RIGHT -> 0xff53
+        KeyEvent.KEYCODE_DPAD_DOWN -> 0xff54
+        else -> null
     }
 
     private fun keySym(event: KeyEvent): Int? {
@@ -499,6 +623,23 @@ class MainActivity : Activity() {
         val savedRamIndex = ramOptionsMb.indices.minByOrNull { kotlin.math.abs(ramOptionsMb[it] - savedRamMb) } ?: 6
         val savedDisk = prefs.getInt(KEY_DISK_GB, 25).coerceIn(20, 30)
         val savedArch = prefs.getString(KEY_GUEST_ARCH, "x86_64") ?: "x86_64"
+        val modeOptions = listOf("Auto (DeX / keyboard + mouse)", "Phone", "PC", "Console")
+        val modeValues = listOf("auto", "phone", "pc", "console")
+        content.addView(label("Interface mode", 13f, muted, true).apply {
+            setPadding(0, dp(14), 0, dp(4))
+        })
+        val modeSpinner = Spinner(this).apply {
+            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, modeOptions)
+            setSelection(modeValues.indexOf(selectedInterfaceMode()).coerceAtLeast(0))
+        }
+        content.addView(modeSpinner)
+        val detectedKeyboard = hasExternalInput(InputDevice.SOURCE_KEYBOARD)
+        val detectedMouse = hasExternalInput(InputDevice.SOURCE_MOUSE)
+        content.addView(label(
+            "Input detected: ${if (detectedKeyboard) "keyboard" else "no keyboard"} · " +
+                "${if (detectedMouse) "mouse" else "no mouse"}. Console maps gamepad buttons/sticks to guest keys.",
+            11f, muted
+        ).apply { setPadding(0, dp(4), 0, dp(8)) })
         content.addView(label("Guest ISO architecture", 13f, muted, true).apply {
             setPadding(0, dp(14), 0, dp(4))
         })
@@ -584,13 +725,16 @@ class MainActivity : Activity() {
                     .putInt(KEY_DISK_GB, disk)
                     .putInt(KEY_CORES, cores)
                     .putString(KEY_GUEST_ARCH, archOptions[archSpinner.selectedItemPosition])
+                    .putString(KEY_INTERFACE_MODE, modeValues[modeSpinner.selectedItemPosition])
                     .apply()
+                applyDevicePresentation()
                 Toast.makeText(this, "Settings saved.", Toast.LENGTH_SHORT).show()
             }
             .show()
     }
 
     override fun onDestroy() {
+        setChromeHidden(false)
         if (isFinishing) vmController?.stop()
         super.onDestroy()
     }
@@ -835,5 +979,6 @@ class MainActivity : Activity() {
         private const val KEY_DISK_GB = "disk_gb"
         private const val KEY_CORES = "cpu_cores"
         private const val KEY_GUEST_ARCH = "guest_arch"
+        private const val KEY_INTERFACE_MODE = "interface_mode"
     }
 }
