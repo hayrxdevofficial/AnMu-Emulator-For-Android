@@ -26,13 +26,15 @@ int main() {
     assert(memory.unmap(0x1000));
     assert(memory.mapped_region_count() == 0);
 
-    // Four-level x86-64 paging: map one virtual 4 KiB page.
-    assert(memory.map(0x100000, 64U * 1024U,
-                      MemoryPermission::Read | MemoryPermission::Write));
-    assert(memory.map(0x200000, 4096,
-                      MemoryPermission::Read | MemoryPermission::Write |
-                      MemoryPermission::Execute));
-    anmu::ps5::X64PageTable paging(memory, 0x100000, 0x100000, 64U * 1024U);
+    // Four-level x86-64 paging: use a larger physical-memory instance.
+    GuestMemory paging_memory(128U * 1024U);
+    assert(paging_memory.map(0x100000, 64U * 1024U,
+                             MemoryPermission::Read | MemoryPermission::Write));
+    assert(paging_memory.map(0x200000, 4096,
+                             MemoryPermission::Read | MemoryPermission::Write |
+                             MemoryPermission::Execute));
+    anmu::ps5::X64PageTable paging(
+        paging_memory, 0x100000, 0x100000, 64U * 1024U);
     assert(paging.valid());
     assert(paging.map_page(0x40000000, 0x200000, false, true));
     assert(paging.allocated_table_pages() == 4U);
@@ -51,7 +53,7 @@ int main() {
     assert(paging.unmap_page(0x40000000));
     assert(!paging.translate(0x40000000, anmu::ps5::PageAccess::Read, translated));
 
-    anmu::ps5::X64PageTable no_space(memory, 0x100000, 0x100000, 4096);
+    anmu::ps5::X64PageTable no_space(paging_memory, 0x100000, 0x100000, 4096);
     assert(no_space.valid());
     assert(!no_space.map_page(0x80000000, 0x200000, true, true));
 
