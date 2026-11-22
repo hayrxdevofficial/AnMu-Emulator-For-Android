@@ -1,0 +1,42 @@
+name: PSHere native foundation tests
+
+on:
+  push:
+    branches: [ps5-android-foundation]
+    paths:
+      - "app/src/main/cpp/ps5/**"
+      - "app/src/test/cpp/**"
+      - ".github/workflows/pshere-native.yml"
+  pull_request:
+    paths:
+      - "app/src/main/cpp/ps5/**"
+      - "app/src/test/cpp/**"
+      - ".github/workflows/pshere-native.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  native-tests:
+    name: Build and test PSHere C++ foundation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++
+
+      - name: Compile with strict warnings
+        run: |
+          g++ -std=c++17 -Wall -Wextra -Werror -pthread \
+            -I app/src/main/cpp \
+            app/src/main/cpp/ps5/memory/guest_memory.cpp \
+            app/src/main/cpp/ps5/input/controller_state.cpp \
+            app/src/test/cpp/pshere_foundation_test.cpp \
+            -o /tmp/pshere-foundation-test
+
+      - name: Run foundation tests
+        run: /tmp/pshere-foundation-test
