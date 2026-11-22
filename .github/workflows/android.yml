@@ -46,6 +46,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential uuid-dev nasm acpica-tools python3 python-is-python3 gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
           git clone --depth 1 --branch edk2-stable202505 https://github.com/tianocore/edk2.git /tmp/edk2
+          python3 -c 'p="/tmp/edk2/BaseTools/Source/C/EfiRom/EfiRom.c"; s=open(p).read(); assert "  CHAR8     *Ptr0;" in s; open(p,"w").write(s.replace("  CHAR8     *Ptr0;", "  CONST CHAR8 *Ptr0;", 1))'
           git -C /tmp/edk2 submodule update --init --recursive
           make -C /tmp/edk2/BaseTools -j2
           cd /tmp/edk2
