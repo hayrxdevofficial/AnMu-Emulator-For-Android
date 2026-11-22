@@ -173,6 +173,10 @@ class QemuVmController(
             }
             throw IOException("QEMU started, but its VNC display could not connect: ${error.localizedMessage}", error)
         }
+        if (!child.isAlive) {
+            vnc.close()
+            throw IOException("QEMU exited while the guest display was connecting.\\n${readErrorTail(stderrLog)}")
+        }
         vncClient = vnc
         onStatus("Virtual machine is running")
     }
