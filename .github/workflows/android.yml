@@ -52,6 +52,7 @@ jobs:
           firmware="$(find Build -name QEMU_EFI.fd -type f -print -quit)"
           test -n "$firmware"
           cp "$firmware" /tmp/anmu-qemu-firmware/QEMU_EFI.fd
+          cp License.txt /tmp/anmu-qemu-firmware/EDK2-LICENSE.txt
 
       - name: Build QEMU runtime with Android NDK
         run: |
@@ -73,6 +74,7 @@ jobs:
           docker cp "$container_id:/opt/qemu-out/libpodroid-launcher.so" dist/qemu/lib/arm64-v8a/
           docker cp "$container_id:/opt/qemu-out/share/qemu/." dist/qemu/assets/qemu/
           cp /tmp/anmu-qemu-firmware/QEMU_EFI.fd dist/qemu/assets/qemu/
+          cp /tmp/anmu-qemu-firmware/EDK2-LICENSE.txt dist/qemu/assets/qemu/
           test -s dist/qemu/lib/arm64-v8a/libqemu-system-aarch64.so
           test -s dist/qemu/lib/arm64-v8a/libqemu-system-x86_64.so
           test -s dist/qemu/lib/arm64-v8a/libslirp.so
@@ -104,6 +106,7 @@ jobs:
           set -euo pipefail
           mkdir -p app/src/main/jniLibs/arm64-v8a app/src/main/assets/qemu
           cp dist/qemu/lib/arm64-v8a/*.so app/src/main/jniLibs/arm64-v8a/
+          chmod 755 app/src/main/jniLibs/arm64-v8a/libqemu-system-aarch64.so app/src/main/jniLibs/arm64-v8a/libqemu-system-x86_64.so app/src/main/jniLibs/arm64-v8a/libpodroid-launcher.so
           cp -R dist/qemu/assets/. app/src/main/assets/qemu/
           find app/src/main/jniLibs/arm64-v8a app/src/main/assets/qemu -type f -printf '%p %s bytes\\n'
 
