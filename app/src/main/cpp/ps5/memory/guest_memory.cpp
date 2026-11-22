@@ -4,6 +4,8 @@
 #include <cstring>
 #include <limits>
 #include <new>
+#include <mutex>
+#include <utility>
 
 namespace anmu::ps5 {
 namespace {
