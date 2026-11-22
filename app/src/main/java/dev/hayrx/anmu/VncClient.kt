@@ -8,8 +8,6 @@ import java.io.DataOutputStream
 import java.io.IOException
 import java.net.InetSocketAddress
 import java.net.Socket
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -37,10 +35,11 @@ class VncClient(
         while (!closed.get() && shouldContinue() && System.currentTimeMillis() < deadline) {
             try {
                 val candidate = Socket()
-                candidate.tcpNoDelay = true
-                candidate.connect(InetSocketAddress(host, port), 1200)
-                candidate.soTimeout = 0
+                // Publish before connect so a refused/timed-out connection is closed in catch.
                 socket = candidate
+                candidate.tcpNoDelay = true
+                candidate.soTimeout = 5_000
+                candidate.connect(InetSocketAddress(host, port), 1200)
                 val input = DataInputStream(BufferedInputStream(candidate.getInputStream(), 64 * 1024))
                 val out = DataOutputStream(BufferedOutputStream(candidate.getOutputStream(), 16 * 1024))
                 val version = ByteArray(12)
@@ -73,6 +72,7 @@ class VncClient(
                 val nameLength = input.readInt()
                 if (nameLength !in 0..(1024 * 1024)) throw IOException("Invalid VNC desktop name.")
                 skipFully(input, nameLength)
+                candidate.soTimeout = 0
 
                 // SetPixelFormat: 32bpp, depth 24, little-endian, RGB shifts 16/8/0.
                 out.write(byteArrayOf(

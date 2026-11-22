@@ -16,8 +16,8 @@ An Android application that boots guest operating systems from ISO files using Q
 
 ## Important compatibility limits
 
-- **Host device:** this runtime currently targets Android devices with an `arm64-v8a` CPU. The app may install on other ABIs, but the QEMU runtime is not provided for them.
-- **Guest architecture:** x86_64 and AArch64 guest emulation are built into the ARM64 QEMU executable. x86_64 guest emulation on an ARM phone uses TCG and can be slow. AArch64 guests require the bundled EDK2 `QEMU_EFI.fd` firmware.
+- **Host device:** this APK is built only for Android devices with an `arm64-v8a` CPU. x86_64 Android host devices are not supported.
+- **Guest architecture:** separate ARM64-host QEMU executables provide AArch64 and x86_64 guest machine types. x86_64 guest emulation on an ARM phone uses TCG and can be slow. AArch64 guests require the bundled EDK2 `QEMU_EFI.fd` firmware.
 - **ISO compatibility:** not every ISO is bootable. The ISO must contain boot media for the selected guest architecture and firmware mode. Select x86_64 for typical PC/Linux desktop ISOs and AArch64 for ARM64 images.
 - **Performance:** TCG is software emulation, not hardware virtualization. Speed depends on the host CPU, available RAM, thermals, guest OS and its drivers. The UI does not claim KVM acceleration.
 - **Memory:** AnMu checks available memory before startup and reduces the requested guest RAM to leave memory for Android. Startup is refused if less than 1 GB can safely be allocated.

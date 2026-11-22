@@ -81,7 +81,11 @@ jobs:
           docker cp "$container_id:/opt/qemu-out/libqemu-system-x86_64.so" dist/qemu/lib/arm64-v8a/
           docker cp "$container_id:/opt/qemu-out/libslirp.so" dist/qemu/lib/arm64-v8a/
           docker cp "$container_id:/opt/qemu-out/libpodroid-launcher.so" dist/qemu/lib/arm64-v8a/
-          docker cp "$container_id:/opt/qemu-out/share/qemu/." dist/qemu/assets/
+          # Keep only the firmware and ROMs used by the current machine/device configuration.
+          for asset in bios-256k.bin bios.bin efi-virtio.rom vgabios-stdvga.bin vgabios.bin; do
+            docker cp "$container_id:/opt/qemu-out/share/qemu/$asset" dist/qemu/assets/
+          done
+          docker cp "$container_id:/opt/qemu-out/share/qemu/keymaps" dist/qemu/assets/
           docker cp "$container_id:/qemu-11.1.2/COPYING" dist/qemu/assets/QEMU-COPYING.txt
           cp /tmp/podroid/LICENSE dist/qemu/assets/PODROID-LICENSE.txt
           cp /tmp/anmu-qemu-firmware/QEMU_EFI.fd dist/qemu/assets/
@@ -91,6 +95,9 @@ jobs:
           test -s dist/qemu/lib/arm64-v8a/libslirp.so
           test -s dist/qemu/assets/QEMU_EFI.fd
           test -s dist/qemu/assets/bios-256k.bin
+          test -s dist/qemu/assets/efi-virtio.rom
+          test -s dist/qemu/assets/vgabios-stdvga.bin
+          test -s dist/qemu/assets/keymaps/en-us
 
       - name: Upload QEMU runtime
         uses: actions/upload-artifact@v4

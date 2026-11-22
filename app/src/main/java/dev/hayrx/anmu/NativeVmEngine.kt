@@ -19,7 +19,7 @@ class NativeVmEngine {
     external fun nativeRuntimeState(): String
 
     /**
-     * Returns a diagnostic message. In this milestone it always reports that QEMU is absent.
+     * Legacy compatibility entry point. QemuVmController owns real QEMU process startup and shutdown.
      */
     external fun nativeStartVm(
         isoUri: String,
