@@ -73,7 +73,7 @@ class QemuVmController(
         onStatus("Copying ISO into app storage...")
         val iso = copyIsoToPrivateStorage(isoUri)
         onStatus("Preparing sparse virtual disk...")
-        val disk = prepareSparseDisk(diskGb.coerceIn(20, 30))
+        val disk = prepareSparseDisk(diskGb.coerceIn(20, 30), arch)
         if (stopRequested) throw IOException("VM startup was cancelled.")
 
         val memory = ActivityManager.MemoryInfo()
@@ -288,8 +288,8 @@ class QemuVmController(
         } ?: -1L
     }
 
-    private fun prepareSparseDisk(sizeGb: Int): File {
-        val file = File(context.filesDir, "anmu-guest.raw")
+    private fun prepareSparseDisk(sizeGb: Int, architecture: String): File {
+        val file = File(context.filesDir, "anmu-guest-$architecture.raw")
         val targetLength = sizeGb.toLong() * 1024L * 1024L * 1024L
         RandomAccessFile(file, "rw").use { disk ->
             if (disk.length() < targetLength) disk.setLength(targetLength)
