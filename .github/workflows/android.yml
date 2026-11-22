@@ -56,7 +56,6 @@ jobs:
           # do not run it under Bash nounset mode.
           set +u
           . ./edksetup.sh
-          set -u
           build -a AARCH64 -t GCC5 -p ArmVirtPkg/ArmVirtQemu.dsc -b RELEASE -n 2
           mkdir -p /tmp/anmu-qemu-firmware
           firmware="$(find Build -name QEMU_EFI.fd -type f -print -quit)"
