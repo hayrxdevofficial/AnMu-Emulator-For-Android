@@ -65,8 +65,13 @@ class QemuVmController(
         copyAssetTree("qemu", firmwareDir)
         if (arch == "aarch64") {
             val efi = File(firmwareDir, "QEMU_EFI.fd")
-            if (!efi.isFile) {
-                throw IOException("AArch64 UEFI firmware is missing. Rebuild the QEMU runtime with the EDK2 firmware step.")
+            if (!efi.isFile || efi.length() == 0L) {
+                throw IOException("AArch64 UEFI firmware is missing from this APK.")
+            }
+        } else {
+            val bios = File(firmwareDir, "bios-256k.bin")
+            if (!bios.isFile || bios.length() == 0L) {
+                throw IOException("The x86_64 SeaBIOS firmware is missing from this APK.")
             }
         }
 
@@ -105,8 +110,7 @@ class QemuVmController(
             args += listOf("-bios", File(firmwareDir, "QEMU_EFI.fd").absolutePath)
             args += listOf("-device", "virtio-gpu-pci")
         } else {
-            val bios = File(firmwareDir, "bios-256k.bin")
-            if (bios.isFile) args += listOf("-bios", bios.absolutePath)
+            args += listOf("-bios", File(firmwareDir, "bios-256k.bin").absolutePath)
             args += listOf("-vga", "std")
         }
         args += listOf("-drive", "if=none,id=cd0,file=${iso.absolutePath},media=cdrom,readonly=on")
