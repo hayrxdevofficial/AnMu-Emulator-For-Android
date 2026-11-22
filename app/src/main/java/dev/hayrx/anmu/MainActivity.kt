@@ -309,7 +309,7 @@ class MainActivity : Activity() {
         vmStarting = true
         button.isEnabled = false
         headerStatus.text = "STARTING"
-        val ramMb = prefs.getInt(KEY_RAM_MB, 2048).coerceIn(128, 6144)
+        val ramMb = prefs.getInt(KEY_RAM_MB, 2048).coerceIn(128, 4096)
         val cores = prefs.getInt(KEY_CORES, 2).coerceAtLeast(1)
         val diskGb = prefs.getInt(KEY_DISK_GB, 25).coerceIn(20, 30)
         val arch = prefs.getString(KEY_GUEST_ARCH, "x86_64") ?: "x86_64"
@@ -643,8 +643,8 @@ class MainActivity : Activity() {
             setPadding(dp(22), dp(14), dp(22), dp(4))
         }
 
-        val ramOptionsMb = listOf(128, 256, 512, 768, 1024, 1536, 2048, 3072, 4096, 6144)
-        val savedRamMb = prefs.getInt(KEY_RAM_MB, 2048).coerceIn(128, 6144)
+        val ramOptionsMb = listOf(128, 256, 512, 768, 1024, 1536, 2048, 3072, 4096)
+        val savedRamMb = prefs.getInt(KEY_RAM_MB, 2048).coerceIn(128, 4096)
         val savedRamIndex = ramOptionsMb.indices.minByOrNull { kotlin.math.abs(ramOptionsMb[it] - savedRamMb) } ?: 6
         val savedDisk = prefs.getInt(KEY_DISK_GB, 25).coerceIn(20, 30)
         val savedArch = prefs.getString(KEY_GUEST_ARCH, "x86_64") ?: "x86_64"
@@ -675,7 +675,8 @@ class MainActivity : Activity() {
         }
         content.addView(archSpinner)
         val cpuCount = Runtime.getRuntime().availableProcessors().coerceIn(1, 8)
-        val savedCores = prefs.getInt(KEY_CORES, min(4, cpuCount)).coerceIn(1, cpuCount)
+        val safeCoreLimit = min(4, cpuCount)
+        val savedCores = prefs.getInt(KEY_CORES, min(2, safeCoreLimit)).coerceIn(1, safeCoreLimit)
 
         val ramValue = label("", 14f, textColor, true)
         content.addView(label("RAM allocation", 13f, muted, true))
@@ -718,7 +719,7 @@ class MainActivity : Activity() {
         content.addView(label("CPU cores", 13f, muted, true).apply {
             setPadding(0, dp(14), 0, dp(4))
         })
-        val coreOptions = (1..cpuCount).map { "$it core" + if (it == 1) "" else "s" }
+        val coreOptions = (1..safeCoreLimit).map { "$it core" + if (it == 1) "" else "s" }
         val spinner = Spinner(this).apply {
             adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, coreOptions)
             setSelection(savedCores - 1)
@@ -728,10 +729,10 @@ class MainActivity : Activity() {
         val memoryInfo = ActivityManager.MemoryInfo()
         (getSystemService(ACTIVITY_SERVICE) as ActivityManager).getMemoryInfo(memoryInfo)
         val physicalGb = memoryInfo.totalMem / (1024.0 * 1024.0 * 1024.0)
-        val recommended = max(1, min(6, physicalGb.toInt() - 1))
+        val recommended = max(1, min(4, physicalGb.toInt() / 3))
         content.addView(label(
-            "Device RAM: %.1f GB. Recommended VM setting: up to $recommended GB. " +
-                "The final limit is checked again before QEMU starts. " +
+            "Device RAM: %.1f GB. Conservative VM limit: up to $recommended GB; default is 2 GB. " +
+                "AnMu keeps memory available for Android and rechecks free RAM before QEMU starts. " +
                 "A 20–30 GB virtual disk should be sparse and grow as data is written."
                     .format(physicalGb),
             11f, muted
