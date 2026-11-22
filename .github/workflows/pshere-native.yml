@@ -47,5 +47,6 @@ jobs:
 
       - name: Run foundation tests
         run: |
+          echo "Running PSHere memory, input, and CPU interpreter tests"
           /tmp/pshere-foundation-test
           /tmp/pshere-cpu-test
