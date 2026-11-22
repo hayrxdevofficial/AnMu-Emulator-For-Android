@@ -128,7 +128,11 @@ class QemuVmController(
             args += listOf("-device", "e1000,netdev=net0")
         }
         args += listOf("-boot", "order=cd,menu=on")
-        args += listOf("-netdev", "user,id=net0")
+        // Explicit IPv4 DHCP settings for guest installers and older operating systems.
+        args += listOf(
+            "-netdev",
+            "user,id=net0,ipv4=on,ipv6=off,net=10.0.2.0/24,host=10.0.2.2,dhcpstart=10.0.2.15,dns=10.0.2.3"
+        )
         args += listOf("-vnc", "127.0.0.1:$display")
         args += listOf("-serial", "file:${serialLog.absolutePath}")
         args += listOf("-monitor", "none")
