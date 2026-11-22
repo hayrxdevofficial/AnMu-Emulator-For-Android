@@ -50,6 +50,7 @@ class MainActivity : Activity() {
     private var vmController: QemuVmController? = null
     private var vmStarting = false
     private var vmRunning = false
+    private var typingDialogOpen = false
     private var guestDisplayView: GuestDisplayView? = null
 
     private lateinit var page: LinearLayout
@@ -299,14 +300,17 @@ class MainActivity : Activity() {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
             minLines = 2
         }
-        AlertDialog.Builder(this)
+        val dialog = AlertDialog.Builder(this)
             .setTitle("Guest keyboard")
             .setView(editor)
             .setNegativeButton("Cancel", null)
             .setPositiveButton("Send") { _, _ ->
                 vmController?.sendText(editor.text?.toString().orEmpty())
             }
-            .show()
+            .create()
+        typingDialogOpen = true
+        dialog.setOnDismissListener { typingDialogOpen = false }
+        dialog.show()
         editor.requestFocus()
     }
 
@@ -323,7 +327,7 @@ class MainActivity : Activity() {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (vmRunning) {
+        if (vmRunning && !typingDialogOpen) {
             val symbol = keySym(event)
             if (symbol != null && event.action in listOf(KeyEvent.ACTION_DOWN, KeyEvent.ACTION_UP)) {
                 vmController?.sendKey(symbol, event.action == KeyEvent.ACTION_DOWN)
