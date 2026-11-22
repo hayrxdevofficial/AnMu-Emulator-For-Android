@@ -5,6 +5,7 @@ import android.app.ActivityManager
 import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -15,12 +16,15 @@ import android.net.Uri
 import android.os.Bundle
 import android.provider.OpenableColumns
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.InputMethodManager
 import android.widget.Button
+import android.widget.EditText
 import android.widget.FrameLayout
+import android.text.InputType
 import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.Spinner
@@ -43,6 +47,10 @@ class MainActivity : Activity() {
     private val nativeEngine by lazy { NativeVmEngine() }
     private var selectedIsoUri: Uri? = null
     private var selectedIsoName: String = ""
+    private var vmController: QemuVmController? = null
+    private var vmStarting = false
+    private var vmRunning = false
+    private var guestDisplayView: GuestDisplayView? = null
 
     private lateinit var page: LinearLayout
     private lateinit var contentFrame: FrameLayout
@@ -158,6 +166,7 @@ class MainActivity : Activity() {
         layout.addView(isoRow)
 
         val display = GuestDisplayView(this)
+        guestDisplayView = display
         layout.addView(display, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
         ))
@@ -177,31 +186,17 @@ class MainActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        val startButton = actionButton("Start OS", true) {
-            val iso = selectedIsoUri
-            if (iso == null) {
-                Toast.makeText(this, "Select an ISO image first.", Toast.LENGTH_SHORT).show()
+        val startButton = actionButton(if (vmRunning) "Stop OS" else "Start OS", true) {
+            if (vmRunning || vmController?.isRunning == true) {
+                stopVm(it = this@MainActivity, button = startButton)
             } else {
-                try {
-                    val ramMb = prefs.getInt(KEY_RAM_GB, 6).coerceIn(1, 6) * 1024
-                    val cores = prefs.getInt(KEY_CORES, 2).coerceAtLeast(1)
-                    val diskPath = getFileStreamPath("anmu-guest.qcow2").absolutePath
-                    val result = nativeEngine.nativeStartVm(
-                        iso.toString(),
-                        ramMb,
-                        cores,
-                        diskPath
-                    )
-                    Toast.makeText(this, result, Toast.LENGTH_LONG).show()
-                } catch (error: UnsatisfiedLinkError) {
-                    Toast.makeText(
-                        this,
-                        "Native engine could not load: ${error.message}",
-                        Toast.LENGTH_LONG
-                    ).show()
-                }
+                startVm(display, startButton)
             }
         }
+        startButton.isEnabled = !vmStarting
+        footer.addView(startButton, LinearLayout.LayoutParams(0, dp(50), 1f).apply {
+            marginEnd = dp(8)
+        })
         val settingsButton = actionButton("Settings", false) { showSettings() }
         footer.addView(startButton, LinearLayout.LayoutParams(0, dp(50), 1f).apply {
             marginEnd = dp(8)
@@ -214,33 +209,175 @@ class MainActivity : Activity() {
         ))
     }
 
+    private fun startVm(display: GuestDisplayView, button: Button) {
+        val iso = selectedIsoUri ?: run {
+            Toast.makeText(this, "Select an ISO image first.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (vmStarting) return
+        vmStarting = true
+        button.isEnabled = false
+        headerStatus.text = "STARTING"
+        val ramMb = prefs.getInt(KEY_RAM_GB, 6).coerceIn(1, 6) * 1024
+        val cores = prefs.getInt(KEY_CORES, 2).coerceAtLeast(1)
+        val diskGb = prefs.getInt(KEY_DISK_GB, 25).coerceIn(20, 30)
+        val arch = prefs.getString(KEY_GUEST_ARCH, "x86_64") ?: "x86_64"
+        val controller = QemuVmController(
+            applicationContext,
+            onFrame = { bitmap -> runOnUiThread { display.updateFrame(bitmap) } },
+            onStatus = { status ->
+                runOnUiThread {
+                    if (!isFinishing) headerStatus.text = status.uppercase().take(22)
+                }
+            }
+        )
+        vmController = controller
+        Thread({
+            try {
+                controller.start(iso, ramMb, cores, diskGb, arch)
+                runOnUiThread {
+                    vmStarting = false
+                    vmRunning = true
+                    button.text = "Stop OS"
+                    button.isEnabled = true
+                    headerStatus.text = "VM RUNNING"
+                    Toast.makeText(this, "QEMU is running. The guest may still be booting.", Toast.LENGTH_LONG).show()
+                }
+            } catch (error: Exception) {
+                controller.stop()
+                runOnUiThread {
+                    vmController = null
+                    vmStarting = false
+                    vmRunning = false
+                    button.text = "Start OS"
+                    button.isEnabled = true
+                    headerStatus.text = "START FAILED"
+                    Toast.makeText(
+                        this,
+                        error.localizedMessage ?: "Could not start QEMU.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        }, "anmu-vm-start").start()
+    }
+
+    private fun stopVm(it: MainActivity, button: Button) {
+        if (vmStarting) return
+        val controller = vmController
+        if (controller == null) {
+            vmRunning = false
+            button.text = "Start OS"
+            return
+        }
+        button.isEnabled = false
+        headerStatus.text = "STOPPING"
+        Thread({
+            controller.stop()
+            runOnUiThread {
+                vmController = null
+                vmRunning = false
+                vmStarting = false
+                button.text = "Start OS"
+                button.isEnabled = true
+                guestDisplayView?.clearFrame()
+                headerStatus.text = "ISO SELECTED"
+            }
+        }, "anmu-vm-stop").start()
+    }
+
+    private fun showTextInput() {
+        val editor = EditText(this).apply {
+            hint = "Type into the guest system"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            minLines = 2
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Guest keyboard")
+            .setView(editor)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Send") { _, _ ->
+                vmController?.sendText(editor.text?.toString().orEmpty())
+            }
+            .show()
+        editor.requestFocus()
+    }
+
+    private fun sendSpecialKey(name: String) {
+        val symbol = when (name) {
+            "ESC" -> 0xff1b
+            "TAB" -> 0xff09
+            "CTRL" -> 0xffe3
+            "ALT" -> 0xffe9
+            else -> return
+        }
+        vmController?.sendKey(symbol, true)
+        vmController?.sendKey(symbol, false)
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (vmRunning) {
+            val symbol = keySym(event)
+            if (symbol != null && event.action in listOf(KeyEvent.ACTION_DOWN, KeyEvent.ACTION_UP)) {
+                vmController?.sendKey(symbol, event.action == KeyEvent.ACTION_DOWN)
+                return true
+            }
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
+    private fun keySym(event: KeyEvent): Int? {
+        val code = event.keyCode
+        return when {
+            code in KeyEvent.KEYCODE_A..KeyEvent.KEYCODE_Z ->
+                (if (event.isShiftPressed) 'A'.code else 'a'.code) + (code - KeyEvent.KEYCODE_A)
+            code in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9 -> '0'.code + (code - KeyEvent.KEYCODE_0)
+            code == KeyEvent.KEYCODE_SPACE -> 0x20
+            code == KeyEvent.KEYCODE_ENTER -> 0xff0d
+            code == KeyEvent.KEYCODE_DEL -> 0xff08
+            code == KeyEvent.KEYCODE_TAB -> 0xff09
+            code == KeyEvent.KEYCODE_ESCAPE -> 0xff1b
+            code == KeyEvent.KEYCODE_DPAD_LEFT -> 0xff51
+            code == KeyEvent.KEYCODE_DPAD_UP -> 0xff52
+            code == KeyEvent.KEYCODE_DPAD_RIGHT -> 0xff53
+            code == KeyEvent.KEYCODE_DPAD_DOWN -> 0xff54
+            code == KeyEvent.KEYCODE_HOME -> 0xff50
+            code == KeyEvent.KEYCODE_MOVE_END -> 0xff57
+            code == KeyEvent.KEYCODE_PAGE_UP -> 0xff55
+            code == KeyEvent.KEYCODE_PAGE_DOWN -> 0xff56
+            code == KeyEvent.KEYCODE_SHIFT_LEFT || code == KeyEvent.KEYCODE_SHIFT_RIGHT -> 0xffe1
+            code == KeyEvent.KEYCODE_CTRL_LEFT || code == KeyEvent.KEYCODE_CTRL_RIGHT -> 0xffe3
+            code == KeyEvent.KEYCODE_ALT_LEFT || code == KeyEvent.KEYCODE_ALT_RIGHT -> 0xffe9
+            else -> null
+        }
+    }
+
     private fun buildKeyboardPanel(): View {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             background = rounded(panel, 16f)
             setPadding(dp(10), dp(8), dp(10), dp(8))
         }
-        val heading = label("KEYBOARD", 10f, muted, true)
-        card.addView(heading)
+        card.addView(label("KEYBOARD", 10f, muted, true))
         val keys = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        listOf("ESC", "TAB", "CTRL", "ALT").forEach { key ->
+        listOf("ESC", "TAB", "CTRL", "ALT", "TYPE").forEach { key ->
             val keyView = label(key, 9f, textColor, true).apply {
                 gravity = Gravity.CENTER
                 background = rounded(Color.rgb(39, 48, 64), 7f)
                 setOnClickListener {
-                    Toast.makeText(this@MainActivity, "Keyboard forwarding will be enabled with the native engine.", Toast.LENGTH_SHORT).show()
+                    if (key == "TYPE") showTextInput() else sendSpecialKey(key)
                 }
             }
             keys.addView(keyView, LinearLayout.LayoutParams(0, dp(34), 1f).apply {
-                if (key != "ALT") marginEnd = dp(4)
+                if (key != "TYPE") marginEnd = dp(4)
                 topMargin = dp(12)
             })
         }
         card.addView(keys)
-        card.addView(label("Guest input • backend pending", 9f, muted).apply {
+        card.addView(label("Touch a key or use your device keyboard", 9f, muted).apply {
             setPadding(0, dp(8), 0, 0)
         })
         return card
@@ -341,6 +478,16 @@ class MainActivity : Activity() {
 
         val savedRam = prefs.getInt(KEY_RAM_GB, 6).coerceIn(1, 6)
         val savedDisk = prefs.getInt(KEY_DISK_GB, 25).coerceIn(20, 30)
+        val savedArch = prefs.getString(KEY_GUEST_ARCH, "x86_64") ?: "x86_64"
+        content.addView(label("Guest ISO architecture", 13f, muted, true).apply {
+            setPadding(0, dp(14), 0, dp(4))
+        })
+        val archOptions = listOf("x86_64", "aarch64")
+        val archSpinner = Spinner(this).apply {
+            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, archOptions)
+            setSelection(archOptions.indexOf(savedArch).coerceAtLeast(0))
+        }
+        content.addView(archSpinner)
         val cpuCount = Runtime.getRuntime().availableProcessors().coerceIn(1, 8)
         val savedCores = prefs.getInt(KEY_CORES, min(4, cpuCount)).coerceIn(1, cpuCount)
 
@@ -409,10 +556,16 @@ class MainActivity : Activity() {
                     .putInt(KEY_RAM_GB, ram)
                     .putInt(KEY_DISK_GB, disk)
                     .putInt(KEY_CORES, cores)
+                    .putString(KEY_GUEST_ARCH, archOptions[archSpinner.selectedItemPosition])
                     .apply()
                 Toast.makeText(this, "Settings saved.", Toast.LENGTH_SHORT).show()
             }
             .show()
+    }
+
+    override fun onDestroy() {
+        if (isFinishing) vmController?.stop()
+        super.onDestroy()
     }
 
     private fun simpleSeekListener(onValue: (Int) -> Unit) = object : SeekBar.OnSeekBarChangeListener {
@@ -471,11 +624,48 @@ class MainActivity : Activity() {
     private fun dp(value: Float): Int = (value * resources.displayMetrics.density).toInt()
 
     private inner class GuestDisplayView(context: Context) : View(context) {
-        private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+        private var frame: Bitmap? = null
+        private val destination = RectF()
+
+        init {
+            isFocusable = true
+            isClickable = true
+        }
+
+        fun updateFrame(bitmap: Bitmap) {
+            val old = frame
+            frame = bitmap
+            if (old != null && old !== bitmap && !old.isRecycled) old.recycle()
+            invalidate()
+        }
+
+        fun clearFrame() {
+            frame?.let { if (!it.isRecycled) it.recycle() }
+            frame = null
+            invalidate()
+        }
+
+        fun frameSize(): Pair<Int, Int>? = frame?.let { it.width to it.height }
+
+        private fun imageBounds(bitmap: Bitmap): RectF {
+            val scale = min(width.toFloat() / bitmap.width, height.toFloat() / bitmap.height)
+            val w = bitmap.width * scale
+            val h = bitmap.height * scale
+            val left = (width - w) / 2f
+            val top = (height - h) / 2f
+            return RectF(left, top, left + w, top + h)
+        }
 
         override fun onDraw(canvas: Canvas) {
             super.onDraw(canvas)
             canvas.drawColor(Color.rgb(4, 7, 12))
+            val bitmap = frame
+            if (bitmap != null && !bitmap.isRecycled) {
+                destination.set(imageBounds(bitmap))
+                canvas.drawBitmap(bitmap, null, destination, paint)
+                return
+            }
             paint.color = Color.rgb(23, 31, 46)
             paint.style = Paint.Style.STROKE
             paint.strokeWidth = dp(1).toFloat()
@@ -493,8 +683,39 @@ class MainActivity : Activity() {
             paint.color = Color.rgb(153, 165, 185)
             paint.textSize = dp(12).toFloat()
             paint.typeface = Typeface.DEFAULT
-            canvas.drawText("ISO selected • QEMU engine not connected", width / 2f, height / 2f + dp(12), paint)
-            canvas.drawText("Guest OS has not started", width / 2f, height / 2f + dp(32), paint)
+            canvas.drawText("QEMU guest display will appear here", width / 2f, height / 2f + dp(12), paint)
+        }
+
+        override fun onTouchEvent(event: MotionEvent): Boolean {
+            val bitmap = frame ?: return true
+            val bounds = imageBounds(bitmap)
+            if (bounds.width() <= 0f || bounds.height() <= 0f) return true
+            val x = (((event.x - bounds.left) / bounds.width()) * bitmap.width)
+                .toInt().coerceIn(0, bitmap.width - 1)
+            val y = (((event.y - bounds.top) / bounds.height()) * bitmap.height)
+                .toInt().coerceIn(0, bitmap.height - 1)
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    requestFocus()
+                    vmController?.sendPointer(x, y, 1)
+                    return true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    vmController?.sendPointer(x, y, if (event.isPressed) 1 else 0)
+                    return true
+                }
+                MotionEvent.ACTION_UP -> {
+                    vmController?.sendPointer(x, y, 0)
+                    performClick()
+                    return true
+                }
+            }
+            return true
+        }
+
+        override fun performClick(): Boolean {
+            super.performClick()
+            return true
         }
     }
 
@@ -521,15 +742,34 @@ class MainActivity : Activity() {
             }
         }
 
+        private fun forward(event: MotionEvent, mask: Int) {
+            val size = vmController?.displaySize() ?: return
+            val x = (event.x / width.coerceAtLeast(1) * size.first).toInt().coerceIn(0, size.first - 1)
+            val y = (event.y / height.coerceAtLeast(1) * size.second).toInt().coerceIn(0, size.second - 1)
+            vmController?.sendPointer(x, y, mask)
+        }
+
         override fun onTouchEvent(event: MotionEvent): Boolean {
             when (event.action) {
-                MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE -> {
+                MotionEvent.ACTION_DOWN -> {
                     pointerX = event.x
                     pointerY = event.y
+                    forward(event, 1)
+                    invalidate()
+                    return true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    pointerX = event.x
+                    pointerY = event.y
+                    forward(event, 1)
                     invalidate()
                     return true
                 }
                 MotionEvent.ACTION_UP -> {
+                    pointerX = event.x
+                    pointerY = event.y
+                    forward(event, 0)
+                    invalidate()
                     performClick()
                     return true
                 }
@@ -539,11 +779,6 @@ class MainActivity : Activity() {
 
         override fun performClick(): Boolean {
             super.performClick()
-            Toast.makeText(
-                this@MainActivity,
-                "Mouse forwarding will be enabled with the native engine.",
-                Toast.LENGTH_SHORT
-            ).show()
             return true
         }
     }
@@ -555,5 +790,6 @@ class MainActivity : Activity() {
         private const val KEY_RAM_GB = "ram_gb"
         private const val KEY_DISK_GB = "disk_gb"
         private const val KEY_CORES = "cpu_cores"
+        private const val KEY_GUEST_ARCH = "guest_arch"
     }
 }
