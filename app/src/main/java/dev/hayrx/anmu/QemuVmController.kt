@@ -83,15 +83,26 @@ class QemuVmController(
 
         val memory = ActivityManager.MemoryInfo()
         (context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager).getMemoryInfo(memory)
-        val reserveMb = 512L
-        val availableAfterReserveMb = (memory.availMem / (1024L * 1024L)) - reserveMb
-        val halfPhysicalRamMb = (memory.totalMem / (1024L * 1024L) / 2L)
-        val safeRamMb = minOf(availableAfterReserveMb, halfPhysicalRamMb).toInt()
+        // Keep a substantial reserve for Android/One UI and background services.
+        // Also cap the guest at one third of physical RAM (maximum 4 GB) to avoid
+        // allowing a VM to consume most of a tablet's memory.
+        val mib = 1024L * 1024L
+        val availableMb = memory.availMem / mib
+        val totalMb = memory.totalMem / mib
+        val androidReserveMb = maxOf(2048L, totalMb / 4L)
+        val availableForGuestMb = availableMb - androidReserveMb
+        val physicalGuestCapMb = minOf(4096L, totalMb / 3L)
+        val safeRamMb = minOf(availableForGuestMb, physicalGuestCapMb).toInt()
         if (safeRamMb < 128) {
-            throw IOException("Not enough free RAM to start even a 128 MB guest. Close other apps and try again.")
+            throw IOException(
+                "AnMu is protecting Android: only $availableMb MB RAM is currently available. " +
+                    "Close background apps and try again."
+            )
         }
-        val actualRam = requestedRamMb.coerceIn(128, 6144).coerceAtMost(safeRamMb)
-        val actualCpus = requestedCpus.coerceIn(1, Runtime.getRuntime().availableProcessors().coerceAtLeast(1))
+        val actualRam = requestedRamMb.coerceIn(128, 4096).coerceAtMost(safeRamMb)
+        val actualCpus = requestedCpus.coerceIn(
+            1, minOf(4, Runtime.getRuntime().availableProcessors().coerceAtLeast(1))
+        )
         if (actualRam < requestedRamMb) {
             onStatus("RAM limited to $actualRam MB to protect Android")
         }
