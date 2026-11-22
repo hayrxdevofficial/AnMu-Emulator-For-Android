@@ -2,7 +2,7 @@
 
 A lightweight Android front end for booting ISO images in a QEMU-based virtual machine.
 
-## Current milestone: 0.1.0 (UI foundation)
+## Current milestone: 0.2.0 (JNI / NDK bridge foundation)
 
 - Android 10+ support target (minSdk 29).
 - Minimal emulator screen with a large guest-display area.
@@ -10,8 +10,10 @@ A lightweight Android front end for booting ISO images in a QEMU-based virtual m
 - Settings for guest RAM (512 MB–6 GB), virtual disk size (20–30 GB), and CPU cores.
 - Fixed keyboard and mouse controls at the bottom of the screen.
 - No device-admin or root permission is requested.
+- Android NDK / CMake native library builds for `arm64-v8a` and `x86_64`.
+- Kotlin-to-C++ JNI bridge is connected to the Start OS action.
 
-**Important:** this milestone is the Android app shell. The QEMU native backend is not bundled yet, so selecting an ISO works but booting a guest OS is not available until the native engine is integrated. The app must not display a fake "running" state.
+**Important:** this milestone contains a working JNI/NDK bridge scaffold, not the QEMU runtime itself. The native bridge intentionally returns `QEMU runtime is not bundled`; no guest OS is booted yet. The app must not display a fake running state.
 
 ## Resource settings
 
@@ -40,9 +42,9 @@ Then build:
 ## Planned milestones
 
 1. **0.1.0** — app shell, ISO picker, persistent settings and input-control layout.
-2. **0.2.0** — QEMU native build for supported Android ABIs and JNI lifecycle.
-3. **0.3.0** — guest display rendering, keyboard/mouse event forwarding and virtual disk creation.
-4. **0.4.0** — device capability detection, safe memory limits, performance presets and compatibility tests.
+2. **0.2.0** — NDK/CMake toolchain and JNI bridge scaffold for ARM64 and x86-64. QEMU itself is not linked yet.
+3. **0.3.0** — integrate a pinned QEMU source/build, define the VM lifecycle and implement virtual disk creation.
+4. **0.4.0** — guest display rendering, keyboard/mouse event forwarding, safe memory limits and compatibility tests.
 
 ## Performance and compatibility notes
 
