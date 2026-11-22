@@ -35,8 +35,17 @@ jobs:
             -I app/src/main/cpp \
             app/src/main/cpp/ps5/memory/guest_memory.cpp \
             app/src/main/cpp/ps5/input/controller_state.cpp \
+            app/src/main/cpp/ps5/cpu/x64_cpu.cpp \
             app/src/test/cpp/pshere_foundation_test.cpp \
             -o /tmp/pshere-foundation-test
+          g++ -std=c++17 -Wall -Wextra -Werror -pthread \
+            -I app/src/main/cpp \
+            app/src/main/cpp/ps5/memory/guest_memory.cpp \
+            app/src/main/cpp/ps5/cpu/x64_cpu.cpp \
+            app/src/test/cpp/pshere_cpu_test.cpp \
+            -o /tmp/pshere-cpu-test
 
       - name: Run foundation tests
-        run: /tmp/pshere-foundation-test
+        run: |
+          /tmp/pshere-foundation-test
+          /tmp/pshere-cpu-test
