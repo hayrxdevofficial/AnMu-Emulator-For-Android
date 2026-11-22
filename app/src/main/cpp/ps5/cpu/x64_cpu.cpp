@@ -194,6 +194,74 @@ StepResult X64Cpu::step() noexcept {
         return StepResult::Executed;
     }
 
+    // 64-bit register stack operations (long-mode PUSH/POP).
+    if (opcode >= 0x50U && opcode <= 0x5FU) {
+        const unsigned reg = (opcode & 7U) | ((rex & 0x01U) ? 8U : 0U);
+        if (opcode <= 0x57U) {
+            if (state_.reg(Register::Rsp) < sizeof(std::uint64_t)) {
+                return StepResult::MemoryFault;
+            }
+            const std::uint64_t new_rsp = state_.reg(Register::Rsp) - sizeof(std::uint64_t);
+            const std::uint64_t value = state_.gpr[reg];
+            if (!memory_.write(new_rsp, &value, sizeof(value))) {
+                return StepResult::MemoryFault;
+            }
+            state_.reg(Register::Rsp) = new_rsp;
+        } else {
+            const std::uint64_t old_rsp = state_.reg(Register::Rsp);
+            if (old_rsp > std::numeric_limits<std::uint64_t>::max() - sizeof(std::uint64_t)) {
+                return StepResult::MemoryFault;
+            }
+            std::uint64_t value = 0;
+            if (!memory_.read(old_rsp, &value, sizeof(value))) {
+                return StepResult::MemoryFault;
+            }
+            state_.gpr[reg] = value;
+            state_.reg(Register::Rsp) = old_rsp + sizeof(std::uint64_t);
+        }
+        state_.rip = next_ip;
+        return StepResult::Executed;
+    }
+
+    // Near relative CALL pushes the next instruction address before branching.
+    if (opcode == 0xE8U) {
+        std::uint64_t raw = 0;
+        if (!decoder.unsigned_value(raw, 4U)) {
+            return StepResult::MemoryFault;
+        }
+        std::uint64_t target = 0;
+        if (!add_signed(decoder.cursor(), static_cast<std::int32_t>(raw), target)) {
+            return StepResult::InvalidEncoding;
+        }
+        const std::uint64_t old_rsp = state_.reg(Register::Rsp);
+        if (old_rsp < sizeof(std::uint64_t)) {
+            return StepResult::MemoryFault;
+        }
+        const std::uint64_t new_rsp = old_rsp - sizeof(std::uint64_t);
+        const std::uint64_t return_address = decoder.cursor();
+        if (!memory_.write(new_rsp, &return_address, sizeof(return_address))) {
+            return StepResult::MemoryFault;
+        }
+        state_.reg(Register::Rsp) = new_rsp;
+        state_.rip = target;
+        return StepResult::Executed;
+    }
+
+    // Near RET restores the instruction pointer from the top of the guest stack.
+    if (opcode == 0xC3U) {
+        const std::uint64_t old_rsp = state_.reg(Register::Rsp);
+        if (old_rsp > std::numeric_limits<std::uint64_t>::max() - sizeof(std::uint64_t)) {
+            return StepResult::MemoryFault;
+        }
+        std::uint64_t return_address = 0;
+        if (!memory_.read(old_rsp, &return_address, sizeof(return_address))) {
+            return StepResult::MemoryFault;
+        }
+        state_.reg(Register::Rsp) = old_rsp + sizeof(std::uint64_t);
+        state_.rip = return_address;
+        return StepResult::Executed;
+    }
+
     if (opcode == 0xEBU || opcode == 0xE9U) {  // JMP rel8/rel32
         std::uint64_t raw = 0;
         const unsigned bytes = opcode == 0xEBU ? 1U : 4U;
