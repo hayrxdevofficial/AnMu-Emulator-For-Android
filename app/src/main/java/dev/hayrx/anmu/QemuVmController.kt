@@ -177,8 +177,9 @@ class QemuVmController(
 
         onStatus("Connecting to guest display...")
         val vnc = VncClient("127.0.0.1", 5900 + display, onFrame)
+        vncClient = vnc
         try {
-            vnc.connect()
+            vnc.connect(30_000L) { child.isAlive && !stopRequested }
         } catch (error: Exception) {
             if (!child.isAlive) {
                 throw IOException("QEMU stopped before the display was ready.\n${readErrorTail(stderrLog)}", error)
@@ -194,7 +195,6 @@ class QemuVmController(
             vnc.close()
             throw IOException("QEMU exited while the guest display was connecting.\\n${readErrorTail(stderrLog)}")
         }
-        vncClient = vnc
         onStatus("Virtual machine is running")
     }
 
