@@ -355,7 +355,8 @@ class MainActivity : Activity() {
             code == KeyEvent.KEYCODE_SHIFT_LEFT || code == KeyEvent.KEYCODE_SHIFT_RIGHT -> 0xffe1
             code == KeyEvent.KEYCODE_CTRL_LEFT || code == KeyEvent.KEYCODE_CTRL_RIGHT -> 0xffe3
             code == KeyEvent.KEYCODE_ALT_LEFT || code == KeyEvent.KEYCODE_ALT_RIGHT -> 0xffe9
-            else -> null
+            code in KeyEvent.KEYCODE_F1..KeyEvent.KEYCODE_F12 -> 0xffbe + (code - KeyEvent.KEYCODE_F1)
+            else -> event.unicodeChar.takeIf { it > 0 }?.let { if (it <= 0xff) it else 0x01000000 or it }
         }
     }
 
