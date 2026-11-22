@@ -785,7 +785,7 @@ class MainActivity : Activity() {
                 MotionEvent.ACTION_MOVE -> {
                     pointerX = event.x
                     pointerY = event.y
-                    if (kotlin.math.abs(event.x - downX) > dp(8) || kotlin.math.abs(event.y - downY) > dp(8)) {
+                    if (kotlin.math.abs(event.x - downX) > dp(8).toFloat() || kotlin.math.abs(event.y - downY) > dp(8).toFloat()) {
                         moved = true
                     }
                     forward(event, 0)
