@@ -699,7 +699,7 @@ class MainActivity : Activity() {
                     return true
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    vmController?.sendPointer(x, y, if (event.isPressed) 1 else 0)
+                    vmController?.sendPointer(x, y, 1)
                     return true
                 }
                 MotionEvent.ACTION_UP -> {
