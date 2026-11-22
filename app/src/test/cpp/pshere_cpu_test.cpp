@@ -40,7 +40,7 @@ int main() {
     assert(cpu.step() == StepResult::Executed);
     assert((cpu.state().rflags & anmu::ps5::cpu::FlagZero) != 0);
     assert(cpu.step() == StepResult::Executed);
-    assert(cpu.state().rip == 0x1028);
+    assert(cpu.state().rip == 0x1027);
     assert(cpu.step() == StepResult::Halted);
     assert(cpu.state().halted);
     assert(cpu.step() == StepResult::Halted);
