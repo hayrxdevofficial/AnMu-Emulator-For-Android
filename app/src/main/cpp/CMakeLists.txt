@@ -5,6 +5,7 @@ add_library(anmu_native SHARED
     anmu_native.cpp
     ps5/memory/guest_memory.cpp
     ps5/input/controller_state.cpp
+    ps5/cpu/x64_cpu.cpp
 )
 
 target_include_directories(anmu_native PRIVATE
