@@ -66,7 +66,7 @@ class MainActivity : Activity() {
         page = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(18), dp(12), dp(18), dp(14))
-            setBackgroundColor(background)
+            setBackgroundColor(this@MainActivity.background)
         }
 
         val header = LinearLayout(this).apply {
@@ -119,17 +119,7 @@ class MainActivity : Activity() {
             setPadding(dp(12), dp(12), dp(12), dp(12))
         }
 
-        val headline = label("Your virtual machine", 22f, textColor, true).apply {
-            gravity = Gravity.CENTER
-        }
-        val subtitle = label("Select an ISO image to prepare a virtual machine", 13f, muted).apply {
-            gravity = Gravity.CENTER
-        }
-        group.addView(headline)
-        group.addView(subtitle, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply { topMargin = dp(9); bottomMargin = dp(26) })
-
+        // Keep the initial screen deliberately minimal: only Settings and Select ISO.
         val settingsButton = actionButton("Settings", false) { showSettings() }
         val isoButton = actionButton("Select ISO", true) { openIsoPicker() }
 
