@@ -3,7 +3,7 @@
 
 namespace {
 constexpr jint kBridgeVersion = 1;
-constexpr const char* kRuntimeState = "QEMU_NOT_LINKED";
+constexpr const char* kRuntimeState = "QEMU_PACKAGED_PROCESS";
 }
 
 extern "C" JNIEXPORT jint JNICALL
@@ -28,9 +28,9 @@ Java_dev_hayrx_anmu_NativeVmEngine_nativeStartVm(
     jint /* memory_mb */,
     jint /* cpu_count */,
     jstring /* disk_path */) {
-    // This is an explicit integration boundary, not a simulated VM boot.
-    // Replace this response only after the QEMU Android runtime is linked.
+    // QEMU is executed as a separate Android-native process by QemuVmController.
+    // This legacy JNI method is intentionally not used to launch the VM.
     return env->NewStringUTF(
-        "QEMU runtime is not bundled. No virtual machine was started."
+        "Use QemuVmController to launch the packaged QEMU process."
     );
 }
