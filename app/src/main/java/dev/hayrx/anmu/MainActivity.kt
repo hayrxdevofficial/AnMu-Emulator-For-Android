@@ -693,51 +693,30 @@ class MainActivity : Activity() {
         }
     }
 
-    // PUP packages are stored separately and are never passed to QEMU.
-    // Sony PUP containers use the SCEUF signature.
+    // PUP is kept as a separate firmware file. Do not inspect magic bytes:
+    // unknown headers must not prevent selecting or retaining a .PUP file.
+    // This does NOT make PUP bootable by QEMU or add PS4/PS5 emulation.
     private fun inspectPup(uri: Uri): Triple<Boolean, String, Long> {
-        return try {
-            val size = contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length } ?: -1L
-            if (size == 0L) return Triple(false, "Файл PUP пустой.", 0L)
-            val header = contentResolver.openInputStream(uri)?.use { input ->
-                val bytes = ByteArray(5)
-                var offset = 0
-                while (offset < bytes.size) {
-                    val count = input.read(bytes, offset, bytes.size - offset)
-                    if (count <= 0) break
-                    offset += count
-                }
-                bytes.copyOf(offset)
-            } ?: return Triple(false, "Не удалось прочитать файл прошивки.", 0L)
-            val magic = String(header, Charsets.US_ASCII)
-            // SCEUF is used by legacy PS3 PUP packages.
-            // PS4/PS5 update packages use an SLB2 outer container instead.
-            val format = when {
-                header.size >= 5 && magic.startsWith("SCEUF") ->
-                    "Распознан контейнер PUP (SCEUF, семейство PS3)."
-                header.size >= 4 && magic.startsWith("SLB2") ->
-                    "Распознан контейнер PUP (SLB2, семейство PS4/PS5)."
-                else -> null
-            }
-            if (format == null) {
-                val hex = header.joinToString(" ") { "%02X".format(it) }
-                return Triple(false, "Неизвестный заголовок PUP ($hex). Для PS3 ожидается SCEUF, для PS4/PS5 — SLB2. Файл может быть неподходящим или повреждённым.", size)
-            }
-            Triple(true, format, size)
-        } catch (error: Exception) {
-            Triple(false, "Не удалось проверить PUP: ${error.localizedMessage ?: "ошибка чтения"}.", 0L)
+        val size = try {
+            contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length } ?: -1L
+        } catch (_: Exception) {
+            -1L
         }
+        return Triple(
+            true,
+            "Файл выбран без проверки заголовка. Совместимость с консолью и запуск пока не подтверждены.",
+            size
+        )
     }
 
     private fun validateSavedPup() {
         val uri = selectedPupUri ?: return
-        val result = inspectPup(uri)
-        if (!result.first) {
-            selectedPupUri = null
-            selectedPupName = ""
-            selectedPupSize = 0L
-            prefs.edit().remove(KEY_PUP_URI).remove(KEY_PUP_NAME).remove(KEY_PUP_SIZE).apply()
-        } else selectedPupSize = result.third
+        // Keep the user's selection even when the provider cannot report its size.
+        selectedPupSize = try {
+            contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length } ?: -1L
+        } catch (_: Exception) {
+            -1L
+        }
     }
 
     private fun formatFileSize(bytes: Long): String {
