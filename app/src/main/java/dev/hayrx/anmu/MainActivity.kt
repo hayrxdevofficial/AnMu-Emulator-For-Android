@@ -40,6 +40,7 @@ import kotlin.math.min
 class MainActivity : Activity() {
 
     private val prefs by lazy { getSharedPreferences("anmu_settings", Context.MODE_PRIVATE) }
+    private val nativeEngine by lazy { NativeVmEngine() }
     private var selectedIsoUri: Uri? = null
     private var selectedIsoName: String = ""
 
@@ -177,11 +178,29 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER_VERTICAL
         }
         val startButton = actionButton("Start OS", true) {
-            Toast.makeText(
-                this,
-                "QEMU engine is not connected in version 0.1.0. The ISO is selected, but no OS has been started.",
-                Toast.LENGTH_LONG
-            ).show()
+            val iso = selectedIsoUri
+            if (iso == null) {
+                Toast.makeText(this, "Select an ISO image first.", Toast.LENGTH_SHORT).show()
+            } else {
+                try {
+                    val ramMb = prefs.getInt(KEY_RAM_GB, 6).coerceIn(1, 6) * 1024
+                    val cores = prefs.getInt(KEY_CORES, 2).coerceAtLeast(1)
+                    val diskPath = getFileStreamPath("anmu-guest.qcow2").absolutePath
+                    val result = nativeEngine.nativeStartVm(
+                        iso.toString(),
+                        ramMb,
+                        cores,
+                        diskPath
+                    )
+                    Toast.makeText(this, result, Toast.LENGTH_LONG).show()
+                } catch (error: UnsatisfiedLinkError) {
+                    Toast.makeText(
+                        this,
+                        "Native engine could not load: ${error.message}",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
         }
         val settingsButton = actionButton("Settings", false) { showSettings() }
         footer.addView(startButton, LinearLayout.LayoutParams(0, dp(50), 1f).apply {
