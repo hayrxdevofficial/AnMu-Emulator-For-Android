@@ -42,6 +42,10 @@ int main() {
     assert(!paging.translate(0x40000000, anmu::ps5::PageAccess::Write, translated));
     assert(paging.translate(0x40000000, anmu::ps5::PageAccess::Execute, translated));
     assert(!paging.map_page(0x40000000, 0x200000, true, true));
+    assert(paging.map_page(0x40001000, 0x200000, true, false));
+    assert(paging.translate(0x40001000, anmu::ps5::PageAccess::Read, translated));
+    assert(!paging.translate(0x40001000, anmu::ps5::PageAccess::Execute, translated));
+    assert(paging.translate(0x40001000, anmu::ps5::PageAccess::Write, translated));
     assert(!paging.translate(0x0001000000000000ULL,
                              anmu::ps5::PageAccess::Read, translated));
     assert(paging.unmap_page(0x40000000));
