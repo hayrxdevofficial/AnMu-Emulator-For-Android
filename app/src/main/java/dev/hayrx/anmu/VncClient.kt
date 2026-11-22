@@ -31,10 +31,10 @@ class VncClient(
     @Volatile var height: Int = 0
         private set
 
-    fun connect(timeoutMs: Long = 30_000L) {
+    fun connect(timeoutMs: Long = 30_000L, shouldContinue: () -> Boolean = { true }) {
         val deadline = System.currentTimeMillis() + timeoutMs
         var lastError: Exception? = null
-        while (!closed.get() && System.currentTimeMillis() < deadline) {
+        while (!closed.get() && shouldContinue() && System.currentTimeMillis() < deadline) {
             try {
                 val candidate = Socket()
                 candidate.tcpNoDelay = true
