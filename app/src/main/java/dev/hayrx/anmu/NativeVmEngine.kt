@@ -1,14 +1,14 @@
 package dev.hayrx.anmu
 
 /**
- * JNI boundary for the future QEMU runtime.
+ * JNI boundary for the QEMU runtime status bridge. QEMU itself is launched by QemuVmController as a separate native process.
  *
  * The native library currently verifies that the Android NDK/JNI toolchain is wired correctly.
- * It deliberately refuses to claim that a guest has booted until QEMU is linked.
+ * It does not launch the VM; QemuVmController owns process startup and VNC.
  */
 class NativeVmEngine {
     companion object {
-        const val STATE_QEMU_NOT_LINKED = "QEMU_NOT_LINKED"
+        const val STATE_QEMU_PACKAGED_PROCESS = "QEMU_PACKAGED_PROCESS"
 
         init {
             System.loadLibrary("anmu_native")
