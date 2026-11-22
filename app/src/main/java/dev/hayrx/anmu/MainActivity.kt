@@ -5,6 +5,8 @@ import android.app.ActivityManager
 import android.app.AlertDialog
 import android.content.Context
 import android.content.res.Configuration
+import android.hardware.input.InputManager
+import android.os.Handler
 import android.view.InputDevice
 import android.content.Intent
 import android.graphics.Bitmap
@@ -54,6 +56,13 @@ class MainActivity : Activity() {
     private var chromePanel: LinearLayout? = null
     private var chromeHidden = false
     private val gamepadPressedKeys = mutableSetOf<Int>()
+    private var inputListenerRegistered = false
+    private val inputDeviceListener = object : InputManager.InputDeviceListener {
+        override fun onInputDeviceAdded(deviceId: Int) = runOnUiThread { applyDevicePresentation() }
+        override fun onInputDeviceRemoved(deviceId: Int) = runOnUiThread { applyDevicePresentation() }
+        override fun onInputDeviceChanged(deviceId: Int) = runOnUiThread { applyDevicePresentation() }
+    }
+    private val inputManager by lazy { getSystemService(Context.INPUT_SERVICE) as InputManager }
 
     private lateinit var page: LinearLayout
     private lateinit var contentFrame: FrameLayout
@@ -76,7 +85,19 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        if (!inputListenerRegistered) {
+            inputManager.registerInputDeviceListener(inputDeviceListener, Handler(mainLooper))
+            inputListenerRegistered = true
+        }
         applyDevicePresentation()
+    }
+
+    override fun onPause() {
+        if (inputListenerRegistered) {
+            inputManager.unregisterInputDeviceListener(inputDeviceListener)
+            inputListenerRegistered = false
+        }
+        super.onPause()
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
@@ -856,6 +877,34 @@ class MainActivity : Activity() {
             paint.textSize = dp(12).toFloat()
             paint.typeface = Typeface.DEFAULT
             canvas.drawText("QEMU guest display will appear here", width / 2f, height / 2f + dp(12), paint)
+        }
+
+        override fun onGenericMotionEvent(event: MotionEvent): Boolean {
+            if ((event.source and InputDevice.SOURCE_MOUSE) != InputDevice.SOURCE_MOUSE) {
+                return super.onGenericMotionEvent(event)
+            }
+            val bitmap = frame ?: return true
+            val bounds = imageBounds(bitmap)
+            if (bounds.width() <= 0f || bounds.height() <= 0f) return true
+            val x = (((event.x - bounds.left) / bounds.width()) * bitmap.width)
+                .toInt().coerceIn(0, bitmap.width - 1)
+            val y = (((event.y - bounds.top) / bounds.height()) * bitmap.height)
+                .toInt().coerceIn(0, bitmap.height - 1)
+            when (event.action) {
+                MotionEvent.ACTION_HOVER_MOVE, MotionEvent.ACTION_MOVE -> {
+                    var mask = 0
+                    if ((event.buttonState and MotionEvent.BUTTON_PRIMARY) != 0) mask = mask or 1
+                    if ((event.buttonState and MotionEvent.BUTTON_SECONDARY) != 0) mask = mask or 4
+                    if ((event.buttonState and MotionEvent.BUTTON_TERTIARY) != 0) mask = mask or 2
+                    vmController?.sendPointer(x, y, mask)
+                    return true
+                }
+                MotionEvent.ACTION_SCROLL -> {
+                    vmController?.sendPointer(x, y, 0)
+                    return true
+                }
+            }
+            return super.onGenericMotionEvent(event)
         }
 
         override fun onTouchEvent(event: MotionEvent): Boolean {
