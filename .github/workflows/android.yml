@@ -10,6 +10,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: anmu-android-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   qemu:
     name: Build QEMU for Android ARM64 host (AArch64 + x86_64 guests)
