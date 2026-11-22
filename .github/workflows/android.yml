@@ -42,7 +42,7 @@ jobs:
 
       - name: Build AArch64 UEFI firmware
         run: |
-          set -euo pipefail
+          set -eo pipefail
           sudo apt-get update
           sudo apt-get install -y build-essential uuid-dev nasm acpica-tools python3 python-is-python3 gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
           git clone --depth 1 --branch edk2-stable202505 https://github.com/tianocore/edk2.git /tmp/edk2
@@ -51,7 +51,12 @@ jobs:
           make -C /tmp/edk2/BaseTools -j2
           cd /tmp/edk2
           export GCC5_AARCH64_PREFIX=aarch64-linux-gnu-
+          export PYTHON_COMMAND=python3
+          # EDK2's setup script references optional variables before assigning them;
+          # do not run it under Bash nounset mode.
+          set +u
           . ./edksetup.sh
+          set -u
           build -a AARCH64 -t GCC5 -p ArmVirtPkg/ArmVirtQemu.dsc -b RELEASE -n 2
           mkdir -p /tmp/anmu-qemu-firmware
           firmware="$(find Build -name QEMU_EFI.fd -type f -print -quit)"
@@ -70,21 +75,23 @@ jobs:
       - name: Collect QEMU runtime and firmware
         run: |
           set -euo pipefail
-          mkdir -p dist/qemu/lib/arm64-v8a dist/qemu/assets/qemu
+          mkdir -p dist/qemu/lib/arm64-v8a dist/qemu/assets
           container_id="$(docker create anmu-qemu-builder)"
           trap 'docker rm -f "$container_id" >/dev/null 2>&1 || true' EXIT
           docker cp "$container_id:/opt/qemu-out/libqemu-system-aarch64.so" dist/qemu/lib/arm64-v8a/
           docker cp "$container_id:/opt/qemu-out/libqemu-system-x86_64.so" dist/qemu/lib/arm64-v8a/
           docker cp "$container_id:/opt/qemu-out/libslirp.so" dist/qemu/lib/arm64-v8a/
           docker cp "$container_id:/opt/qemu-out/libpodroid-launcher.so" dist/qemu/lib/arm64-v8a/
-          docker cp "$container_id:/opt/qemu-out/share/qemu/." dist/qemu/assets/qemu/
-          docker cp "$container_id:/qemu-11.1.2/COPYING" dist/qemu/assets/qemu/QEMU-COPYING.txt
-          cp /tmp/podroid/LICENSE dist/qemu/assets/qemu/PODROID-LICENSE.txt
-          cp /tmp/anmu-qemu-firmware/QEMU_EFI.fd dist/qemu/assets/qemu/
-          cp /tmp/anmu-qemu-firmware/EDK2-LICENSE.txt dist/qemu/assets/qemu/
+          docker cp "$container_id:/opt/qemu-out/share/qemu/." dist/qemu/assets/
+          docker cp "$container_id:/qemu-11.1.2/COPYING" dist/qemu/assets/QEMU-COPYING.txt
+          cp /tmp/podroid/LICENSE dist/qemu/assets/PODROID-LICENSE.txt
+          cp /tmp/anmu-qemu-firmware/QEMU_EFI.fd dist/qemu/assets/
+          cp /tmp/anmu-qemu-firmware/EDK2-LICENSE.txt dist/qemu/assets/
           test -s dist/qemu/lib/arm64-v8a/libqemu-system-aarch64.so
           test -s dist/qemu/lib/arm64-v8a/libqemu-system-x86_64.so
           test -s dist/qemu/lib/arm64-v8a/libslirp.so
+          test -s dist/qemu/assets/QEMU_EFI.fd
+          test -s dist/qemu/assets/bios-256k.bin
 
       - name: Upload QEMU runtime
         uses: actions/upload-artifact@v4
