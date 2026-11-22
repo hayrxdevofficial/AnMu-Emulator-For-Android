@@ -186,17 +186,15 @@ class MainActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        val startButton = actionButton(if (vmRunning) "Stop OS" else "Start OS", true) {
+        lateinit var startButton: Button
+        startButton = actionButton(if (vmRunning) "Stop OS" else "Start OS", true) {
             if (vmRunning || vmController?.isRunning == true) {
-                stopVm(it = this@MainActivity, button = startButton)
+                stopVm(startButton)
             } else {
                 startVm(display, startButton)
             }
         }
         startButton.isEnabled = !vmStarting
-        footer.addView(startButton, LinearLayout.LayoutParams(0, dp(50), 1f).apply {
-            marginEnd = dp(8)
-        })
         val settingsButton = actionButton("Settings", false) { showSettings() }
         footer.addView(startButton, LinearLayout.LayoutParams(0, dp(50), 1f).apply {
             marginEnd = dp(8)
@@ -262,7 +260,7 @@ class MainActivity : Activity() {
         }, "anmu-vm-start").start()
     }
 
-    private fun stopVm(it: MainActivity, button: Button) {
+    private fun stopVm(button: Button) {
         if (vmStarting) return
         val controller = vmController
         if (controller == null) {
