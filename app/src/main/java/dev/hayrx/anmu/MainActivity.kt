@@ -48,9 +48,12 @@ class MainActivity : Activity() {
     private val nativeEngine by lazy { NativeVmEngine() }
     private var selectedIsoUri: Uri? = null
     private var selectedIsoName: String = ""
-    private var selectedPupUri: Uri? = null
-    private var selectedPupName: String = ""
-    private var selectedPupSize: Long = 0L
+    private var selectedPs4PupUri: Uri? = null
+    private var selectedPs4PupName: String = ""
+    private var selectedPs4PupSize: Long = 0L
+    private var selectedPs5PupUri: Uri? = null
+    private var selectedPs5PupName: String = ""
+    private var selectedPs5PupSize: Long = 0L
     private var vmController: QemuVmController? = null
     private var vmStarting = false
     private var vmRunning = false
@@ -82,9 +85,10 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         selectedIsoUri = prefs.getString(KEY_ISO_URI, null)?.let(Uri::parse)
         selectedIsoName = prefs.getString(KEY_ISO_NAME, "") ?: ""
-        selectedPupUri = prefs.getString(KEY_PUP_URI, null)?.let(Uri::parse)
-        selectedPupName = prefs.getString(KEY_PUP_NAME, "") ?: ""
-        selectedPupSize = prefs.getLong(KEY_PUP_SIZE, 0L)
+        selectedPs4PupUri = prefs.getString(KEY_PS4_PUP_URI, null)?.let(Uri::parse)
+        selectedPs4PupName = prefs.getString(KEY_PS4_PUP_NAME, "") ?: ""
+        selectedPs5PupUri = prefs.getString(KEY_PS5_PUP_URI, null)?.let(Uri::parse)
+        selectedPs5PupName = prefs.getString(KEY_PS5_PUP_NAME, "") ?: ""
         validateSavedIso()
         validateSavedPup()
         buildPage()
@@ -179,14 +183,13 @@ class MainActivity : Activity() {
             dp(240), dp(54)
         ).apply { bottomMargin = dp(12) })
         group.addView(isoButton, LinearLayout.LayoutParams(dp(240), dp(54)).apply { bottomMargin = dp(12) })
-        group.addView(actionButton("PS5 Firmware (.PUP)", false) { openPupPicker() },
-            LinearLayout.LayoutParams(dp(240), dp(54)))
-        group.addView(label(
-            selectedPupName.takeIf { it.isNotBlank() }?.let { "Firmware: $it · ${formatFileSize(selectedPupSize)}" }
-                ?: "PUP is stored separately; it is not a bootable ISO.",
-            11f, muted
-        ).apply { gravity = Gravity.CENTER; setPadding(dp(8), dp(10), dp(8), 0); maxLines = 3 },
-            LinearLayout.LayoutParams(dp(280), ViewGroup.LayoutParams.WRAP_CONTENT))
+        group.addView(actionButton("Console Firmware · PS4 / PS5", false) { showFirmwareHub() },
+            LinearLayout.LayoutParams(dp(260), dp(54)))
+        group.addView(label(firmwareSummary(), 11f, muted).apply {
+            gravity = Gravity.CENTER
+            setPadding(dp(8), dp(10), dp(8), 0)
+            maxLines = 4
+        }, LinearLayout.LayoutParams(dp(290), ViewGroup.LayoutParams.WRAP_CONTENT))
 
         contentFrame.addView(group, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
@@ -225,18 +228,18 @@ class MainActivity : Activity() {
         isoRow.addView(smallButton("CHANGE") { openIsoPicker() })
         chrome.addView(isoRow)
 
-        val pupRow = LinearLayout(this).apply {
+        val firmwareRow = LinearLayout(this).apply {
             gravity = Gravity.CENTER_VERTICAL
             orientation = LinearLayout.HORIZONTAL
             setPadding(dp(4), 0, dp(4), dp(6))
         }
-        val pupInfo = label(
-            selectedPupName.takeIf { it.isNotBlank() }?.let { "PS5 PUP: $it · ${formatFileSize(selectedPupSize)}" }
-                ?: "PS5 Firmware: not selected", 11f, muted
-        ).apply { maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.MIDDLE }
-        pupRow.addView(pupInfo, LinearLayout.LayoutParams(0, dp(36), 1f))
-        pupRow.addView(smallButton("PUP") { openPupPicker() })
-        chrome.addView(pupRow)
+        val firmwareInfo = label(firmwareSummary(), 10f, muted).apply {
+            maxLines = 2
+            ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
+        }
+        firmwareRow.addView(firmwareInfo, LinearLayout.LayoutParams(0, dp(38), 1f))
+        firmwareRow.addView(smallButton("FIRMWARE") { showFirmwareHub() })
+        chrome.addView(firmwareRow)
 
         val inputDock = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -457,7 +460,7 @@ class MainActivity : Activity() {
             val down = event.action == KeyEvent.ACTION_DOWN
             val up = event.action == KeyEvent.ACTION_UP
             if (isConsoleInputEnabled() && (down || up)) {
-                val mapped = gamepadKeySym(event.keyCode)
+                val mapped = gamepadKeySym(event.keyCode) ?: consoleKeyboardKeySym(event.keyCode)
                 if (mapped != null) {
                     vmController?.sendKey(mapped, down)
                     return true
@@ -516,6 +519,24 @@ class MainActivity : Activity() {
         else -> null
     }
 
+    /** Keyboard fallback for Console mode: WASD controls movement. */
+    private fun consoleKeyboardKeySym(code: Int): Int? = when (code) {
+        KeyEvent.KEYCODE_W -> 0xff52
+        KeyEvent.KEYCODE_A -> 0xff51
+        KeyEvent.KEYCODE_S -> 0xff54
+        KeyEvent.KEYCODE_D -> 0xff53
+        KeyEvent.KEYCODE_DPAD_LEFT -> 0xff51
+        KeyEvent.KEYCODE_DPAD_UP -> 0xff52
+        KeyEvent.KEYCODE_DPAD_RIGHT -> 0xff53
+        KeyEvent.KEYCODE_DPAD_DOWN -> 0xff54
+        KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_SPACE -> 0xff0d
+        KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_DEL -> 0xff1b
+        KeyEvent.KEYCODE_SHIFT_LEFT, KeyEvent.KEYCODE_SHIFT_RIGHT -> 0xff08
+        KeyEvent.KEYCODE_TAB -> 0xff09
+        KeyEvent.KEYCODE_ESCAPE -> 0xffe9
+        else -> null
+    }
+
     private fun keySym(event: KeyEvent): Int? {
         val code = event.keyCode
         return when {
@@ -568,9 +589,11 @@ class MainActivity : Activity() {
             })
         }
         card.addView(keys)
-        card.addView(label("Touch a key or use your device keyboard", 9f, muted).apply {
-            setPadding(0, dp(8), 0, 0)
-        })
+        card.addView(label(
+            if (isConsoleInputEnabled()) "Console: WASD / arrows · Enter/Space: X · Esc: Options"
+            else "Touch a key or use your device keyboard",
+            9f, muted
+        ).apply { setPadding(0, dp(8), 0, 0) })
         return card
     }
 
@@ -590,7 +613,54 @@ class MainActivity : Activity() {
         return card
     }
 
-    private fun openPupPicker() {
+    private fun showFirmwareHub() {
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(12), dp(20), dp(8))
+        }
+        content.addView(label(
+            "Открой официальную страницу Sony, скачай системное обновление, затем выбери .PUP здесь. AnMu сохраняет файл, но не устанавливает его на консоль и пока не запускает PS4/PS5 как виртуальную машину.",
+            12f, muted
+        ).apply { setPadding(0, 0, 0, dp(12)) })
+        content.addView(actionButton("Официальная страница PS4", false) {
+            openOfficialFirmwarePage("ps4")
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)).apply {
+            bottomMargin = dp(8)
+        })
+        content.addView(actionButton("Выбрать PS4UPDATE.PUP", false) {
+            openPupPicker("ps4")
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)).apply {
+            bottomMargin = dp(14)
+        })
+        content.addView(actionButton("Официальная страница PS5", false) {
+            openOfficialFirmwarePage("ps5")
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)).apply {
+            bottomMargin = dp(8)
+        })
+        content.addView(actionButton("Выбрать PS5UPDATE.PUP", true) {
+            openPupPicker("ps5")
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)))
+        AlertDialog.Builder(this)
+            .setTitle("Console Firmware")
+            .setView(content)
+            .setNegativeButton("Close", null)
+            .show()
+    }
+
+    private fun openOfficialFirmwarePage(platform: String) {
+        val url = if (platform == "ps4") {
+            "https://www.playstation.com/de-de/support/hardware/ps4/system-software/"
+        } else {
+            "https://www.playstation.com/de-de/support/hardware/ps5/system-software/"
+        }
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+        } catch (error: Exception) {
+            Toast.makeText(this, "Не удалось открыть сайт PlayStation: ${error.localizedMessage}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun openPupPicker(platform: String) {
         if (vmRunning || vmStarting) {
             Toast.makeText(this, "Stop the guest OS before changing firmware.", Toast.LENGTH_SHORT).show()
             return
@@ -603,7 +673,7 @@ class MainActivity : Activity() {
         }
         try {
             @Suppress("DEPRECATION")
-            startActivityForResult(intent, REQUEST_PUP)
+            startActivityForResult(intent, if (platform == "ps4") REQUEST_PUP_PS4 else REQUEST_PUP_PS5)
         } catch (error: Exception) {
             Toast.makeText(this, "Could not open the file picker: ${error.localizedMessage}", Toast.LENGTH_LONG).show()
         }
@@ -635,7 +705,7 @@ class MainActivity : Activity() {
         val uri = data?.data ?: return
         val name = queryDisplayName(uri)
 
-        if (requestCode == REQUEST_PUP) {
+        if (requestCode == REQUEST_PUP_PS4 || requestCode == REQUEST_PUP_PS5) {
             if (name.isBlank() || !name.lowercase().endsWith(".pup")) {
                 Toast.makeText(this, "Выберите файл прошивки с расширением .PUP.", Toast.LENGTH_LONG).show()
                 return
@@ -647,12 +717,26 @@ class MainActivity : Activity() {
             }
             val flags = data.flags and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
             try { contentResolver.takePersistableUriPermission(uri, flags) } catch (_: SecurityException) { }
-            selectedPupUri = uri
-            selectedPupName = name
-            selectedPupSize = check.third
-            prefs.edit().putString(KEY_PUP_URI, uri.toString()).putString(KEY_PUP_NAME, name)
-                .putLong(KEY_PUP_SIZE, selectedPupSize).apply()
-            Toast.makeText(this, "${check.second} Файл сохранён (${formatFileSize(selectedPupSize)}). Это не означает, что AnMu уже умеет запускать эту консоль.", Toast.LENGTH_LONG).show()
+            val isPs4 = requestCode == REQUEST_PUP_PS4
+            val editor = prefs.edit()
+            if (isPs4) {
+                selectedPs4PupUri = uri
+                selectedPs4PupName = name
+                selectedPs4PupSize = check.third
+                editor.putString(KEY_PS4_PUP_URI, uri.toString())
+                    .putString(KEY_PS4_PUP_NAME, name)
+                    .putLong(KEY_PS4_PUP_SIZE, selectedPs4PupSize)
+            } else {
+                selectedPs5PupUri = uri
+                selectedPs5PupName = name
+                selectedPs5PupSize = check.third
+                editor.putString(KEY_PS5_PUP_URI, uri.toString())
+                    .putString(KEY_PS5_PUP_NAME, name)
+                    .putLong(KEY_PS5_PUP_SIZE, selectedPs5PupSize)
+            }
+            editor.apply()
+            val platform = if (isPs4) "PS4" else "PS5"
+            Toast.makeText(this, "$platform PUP saved (${formatFileSize(check.third)}). Console emulation is not implied.", Toast.LENGTH_LONG).show()
             renderContent()
             return
         }
@@ -710,13 +794,30 @@ class MainActivity : Activity() {
     }
 
     private fun validateSavedPup() {
-        val uri = selectedPupUri ?: return
-        // Keep the user's selection even when the provider cannot report its size.
-        selectedPupSize = try {
+        // Migrate the old single-PUP setting into the PS5 slot.
+        if (selectedPs5PupUri == null) {
+            selectedPs5PupUri = prefs.getString(KEY_PUP_URI, null)?.let(Uri::parse)
+            selectedPs5PupName = prefs.getString(KEY_PUP_NAME, "") ?: ""
+        }
+        selectedPs4PupSize = fileSizeForUri(selectedPs4PupUri)
+        selectedPs5PupSize = fileSizeForUri(selectedPs5PupUri)
+    }
+
+    private fun fileSizeForUri(uri: Uri?): Long {
+        if (uri == null) return 0L
+        return try {
             contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length } ?: -1L
         } catch (_: Exception) {
             -1L
         }
+    }
+
+    private fun firmwareSummary(): String {
+        val ps4 = selectedPs4PupName.takeIf { it.isNotBlank() }
+            ?.let { "PS4: $it (${formatFileSize(selectedPs4PupSize)})" } ?: "PS4: not selected"
+        val ps5 = selectedPs5PupName.takeIf { it.isNotBlank() }
+            ?.let { "PS5: $it (${formatFileSize(selectedPs5PupSize)})" } ?: "PS5: not selected"
+        return "$ps4\n$ps5\nPUP is stored separately; it is not a bootable ISO."
     }
 
     private fun formatFileSize(bytes: Long): String {
@@ -765,7 +866,7 @@ class MainActivity : Activity() {
         val detectedMouse = hasExternalInput(InputDevice.SOURCE_MOUSE)
         content.addView(label(
             "Input detected: ${if (detectedKeyboard) "keyboard" else "no keyboard"} · " +
-                "${if (detectedMouse) "mouse" else "no mouse"}. Console maps gamepad buttons/sticks to guest keys.",
+                "${if (detectedMouse) "mouse" else "no mouse"}. Console mode supports keyboard fallback: WASD / arrows, Enter / Space, Esc, Shift and Tab.",
             11f, muted
         ).apply { setPadding(0, dp(4), 0, dp(8)) })
         content.addView(label("Guest ISO architecture", 13f, muted, true).apply {
@@ -1130,11 +1231,18 @@ class MainActivity : Activity() {
 
     companion object {
         private const val REQUEST_ISO = 4102
-        private const val REQUEST_PUP = 4103
+        private const val REQUEST_PUP_PS4 = 4103
+        private const val REQUEST_PUP_PS5 = 4104
         private const val KEY_ISO_URI = "iso_uri"
         private const val KEY_PUP_URI = "pup_uri"
         private const val KEY_PUP_NAME = "pup_name"
         private const val KEY_PUP_SIZE = "pup_size"
+        private const val KEY_PS4_PUP_URI = "ps4_pup_uri"
+        private const val KEY_PS4_PUP_NAME = "ps4_pup_name"
+        private const val KEY_PS4_PUP_SIZE = "ps4_pup_size"
+        private const val KEY_PS5_PUP_URI = "ps5_pup_uri"
+        private const val KEY_PS5_PUP_NAME = "ps5_pup_name"
+        private const val KEY_PS5_PUP_SIZE = "ps5_pup_size"
         private const val KEY_ISO_NAME = "iso_name"
         private const val KEY_RAM_MB = "ram_mb"
         private const val KEY_DISK_GB = "disk_gb"
