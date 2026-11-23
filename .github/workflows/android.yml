@@ -2,7 +2,7 @@ name: Android build
 
 on:
   push:
-    branches: [main]
+    branches: [main, ps5-android-foundation]
   pull_request:
     branches: [main]
   workflow_dispatch:
